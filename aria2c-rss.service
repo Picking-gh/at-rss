@@ -1,12 +1,12 @@
 [Unit]
-Description=Transmission RSS daemon.
+Description=Aria2c RSS daemon.
 After=network.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/transmission-rss
-ExecReload=/bin/kill -s HUP $MAINPID
+ExecStart=/usr/bin/aria2c-rss
+ExecReload=/bin/kill -s TERM $MAINPID
 Restart=always
 
 [Install]

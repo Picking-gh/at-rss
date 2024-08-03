@@ -16,7 +16,7 @@ import (
 	"github.com/atrox/homedir"
 )
 
-const cachePath = "~/.cache/transmission-rss.gob"
+const cachePath = "~/.cache/aria2c-rss.gob"
 
 // Cache handle a key value storage
 type Cache struct {

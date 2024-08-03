@@ -10,7 +10,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/go-yaml/yaml"
+	"gopkg.in/yaml.v3"
 )
 
 const defaultServerUrl = "http://localhost:6800/jsonrpc"
@@ -23,10 +23,14 @@ type Config struct {
 		Token string
 	}
 	UpdateInterval uint64 `yaml:"update_interval"`
-	Feeds          []string
-	Keywords       []string
-	Trick          bool
-	Pattern        string
+	Feeds          []Feed
+}
+type Feed struct {
+	Url     string
+	Include []string
+	Exclude []string
+	Trick   bool
+	Pattern string
 }
 
 // NewConfig return a new Config object

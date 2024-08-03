@@ -28,8 +28,10 @@ func NewAria2c(url string, token string) *Aria2c {
 }
 
 // Add add a new magnet link to the aria2c server
-func (c *Aria2c) Add(magnet string) error {
-	_, err := c.client.Download(arigo.URIs(magnet), nil)
+func (a *Aria2c) Add(magnet string) error {
+	_, err := a.client.Download(
+		arigo.URIs(magnet),
+		nil)
 
 	if err != nil {
 		return err

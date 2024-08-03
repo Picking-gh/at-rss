@@ -9,13 +9,16 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/jasonlvhit/gocron"
+	"github.com/go-co-op/gocron/v2"
 	"github.com/jessevdk/go-flags"
 )
 
 type options struct {
-	Config string `short:"c" long:"conf" description:"Config file" default:"/etc/transmission-rss.conf"`
+	Config string `short:"c" long:"conf" description:"Config file" default:"/etc/aria2c-rss.conf"`
 }
 
 var opt options
@@ -32,6 +35,7 @@ func main() {
 	}
 
 	config := NewConfig(opt.Config)
+	log.Println(config)
 
 	client := NewAria2c(config.Server.Url, config.Server.Token)
 
@@ -39,7 +43,7 @@ func main() {
 
 	update := func() {
 		for _, feed := range config.Feeds {
-			aggregator := NewAggregator(feed, cache)
+			aggregator := NewAggregator(&feed, cache)
 			if aggregator == nil {
 				continue
 			}
@@ -54,11 +58,29 @@ func main() {
 		}
 	}
 
-	// Run now
+	// Run once
 	update()
 
-	// Schedule
-	gocron.Every(config.UpdateInterval).Minutes().Do(update)
+	// Create cron job for periodic updating and fire
+	s, err := gocron.NewScheduler()
+	if err != nil {
+		log.Fatal("Unable to create new scheduler")
+	}
 
-	<-gocron.Start()
+	_, err = s.NewJob(
+		gocron.DurationJob(
+			time.Duration(config.UpdateInterval)*time.Minute,
+		),
+		gocron.NewTask(update),
+	)
+	if err != nil {
+		log.Fatal("Unable to create periodic tasks")
+	}
+	s.Start()
+
+	// Accept SIGINT or SIGTERM for gracefully shutdown the above cron job
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	<-stop
+	s.Shutdown()
 }
