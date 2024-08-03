@@ -35,7 +35,6 @@ func main() {
 	}
 
 	config := NewConfig(opt.Config)
-	log.Println(config)
 
 	client := NewAria2c(config.Server.Url, config.Server.Token)
 
@@ -54,7 +53,10 @@ func main() {
 				if err != nil {
 					log.Printf("Adding [%s] failed, %s", url, err)
 				}
+				time.Sleep(time.Second)
 			}
+
+			client.client.PurgeDownloadResults()
 		}
 	}
 
