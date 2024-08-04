@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/liuzl/gocc"
 	"github.com/mmcdole/gofeed"
 )
 
@@ -66,11 +67,26 @@ func (a *Aggregator) GetNewTorrentURL() []string {
 		}
 	}
 
-	log.Printf("Fetching torrents from [%s]...", a.Url)
-
+	hasExpectedItem := false
+	cc, _ := gocc.New("t2s") // "t2s" tradisional chinese -> simplified chinese
 	for _, item := range items {
-		if a.shouldSkipItem(strings.ToLower(item.Title)) {
+		// The filtering criteria ignore the distinction between traditional and simplified Chinese,
+		// so here the item.Title is converted to simplified Chinese and compared with the keywords that have already been converted to simplified Chinese.
+		var title string
+		if cc != nil {
+			title, err = cc.Convert(item.Title)
+		}
+		if cc == nil || err != nil {
+			title = item.Title
+		}
+
+		if a.shouldSkipItem(strings.ToLower(title)) {
 			continue
+		}
+		// Only print after finding the first item that meets the criteria to reduce unnecessary logs.
+		if !hasExpectedItem {
+			hasExpectedItem = true
+			log.Printf("Fetching torrents from [%s]...", a.Url)
 		}
 
 		log.Printf("Got %s", item.Title)

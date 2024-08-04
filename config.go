@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/liuzl/gocc"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,5 +51,31 @@ func NewConfig(filename string) *Config {
 	if config.UpdateInterval == 0 {
 		config.UpdateInterval = defaultUpdateInterval
 	}
+
+	// The filtering criteria ignore the distinction between traditional and simplified Chinese,
+	// so here the Include and Exclude keywords are converted to simplified Chinese.
+	cc, err := gocc.New("t2s") // "t2s" traditional Chinese -> simplified Chinese
+	if err == nil {
+		for _, feed := range config.Feeds {
+			feed.Include = convert(cc, feed.Include)
+			feed.Exclude = convert(cc, feed.Exclude)
+		}
+	} else {
+		log.Println("Cannot perform traditional and simplified Chinese conversion: ", err)
+	}
 	return &config
+}
+
+// convert convert given []string to the expected type
+func convert(cc *gocc.OpenCC, texts []string) []string {
+	var simplified []string
+	for _, text := range texts {
+		result, err := cc.Convert(text)
+		if err != nil {
+			simplified = append(simplified, text)
+		} else {
+			simplified = append(simplified, result)
+		}
+	}
+	return simplified
 }
