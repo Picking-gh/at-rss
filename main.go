@@ -10,11 +10,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jessevdk/go-flags"
 )
@@ -36,48 +34,15 @@ func main() {
 		}
 	}
 
-	var config *Config
-	var configLock sync.Mutex
-	var client *Aria2c
-
-	// Watch config file for changes and reload.
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Fatalf("Failed to create watcher: %v", err)
-	}
-	defer watcher.Close()
-	err = watcher.Add(opt.Config)
-	if err != nil {
-		log.Fatalf("Failed to watch file: %v", err)
-	}
-	loadConfig := func() {
-		configLock.Lock()
-		defer configLock.Unlock()
-		config = NewConfig(opt.Config)
-		client = NewAria2c(config.Server.Url, config.Server.Token)
-	}
-	go func() {
-		for event := range watcher.Events {
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				log.Println("Config file changed. Reloading...")
-				loadConfig()
-			}
-		}
-	}()
-
-	loadConfig()
+	config := NewConfig(opt.Config)
+	client := NewAria2c(config.Server.Url, config.Server.Token)
 	cache := NewCache()
 
 	// Parse feeds and fire downloading on current config.
 	// In update progress config may change.
 	update := func() {
-		configLock.Lock()
-		configNow := config
-		clientNow := client
-		configLock.Unlock()
-
-		for i := range configNow.Feeds {
-			feed := &configNow.Feeds[i]
+		for i := range config.Feeds {
+			feed := &config.Feeds[i]
 			aggregator := NewAggregator(feed, cache)
 			if aggregator == nil {
 				continue
@@ -85,14 +50,14 @@ func main() {
 
 			urls := aggregator.GetNewTorrentURL()
 			for _, url := range urls {
-				err := clientNow.Add(url)
+				err := client.Add(url)
 				if err != nil {
 					log.Printf("Adding [%s] failed, %v", url, err)
 				}
 				time.Sleep(time.Second)
 			}
 
-			clientNow.CleanUp()
+			client.CleanUp()
 		}
 	}
 

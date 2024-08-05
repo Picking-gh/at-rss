@@ -4,7 +4,6 @@ go 1.22.5
 
 require (
 	github.com/atrox/homedir v1.0.0
-	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-co-op/gocron/v2 v2.11.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/liuzl/gocc v0.0.0-20231231122217-0372e1059ca5
