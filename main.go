@@ -41,8 +41,9 @@ func main() {
 	cache := NewCache()
 
 	update := func() {
-		for _, feed := range config.Feeds {
-			aggregator := NewAggregator(&feed, cache)
+		for i := range config.Feeds {
+			feed := &config.Feeds[i]
+			aggregator := NewAggregator(feed, cache)
 			if aggregator == nil {
 				continue
 			}
@@ -56,7 +57,7 @@ func main() {
 				time.Sleep(time.Second)
 			}
 
-			client.client.PurgeDownloadResults()
+			client.CleanUp()
 		}
 	}
 

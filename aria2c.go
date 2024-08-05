@@ -38,3 +38,8 @@ func (a *Aria2c) Add(magnet string) error {
 	}
 	return nil
 }
+
+// CleanUp purges completed/error/removed downloads
+func (a *Aria2c) CleanUp() {
+	a.client.PurgeDownloadResults()
+}
