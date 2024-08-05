@@ -8,7 +8,6 @@ package main
 
 import (
 	"log"
-	"regexp"
 	"strings"
 
 	"github.com/liuzl/gocc"
@@ -56,23 +55,13 @@ func (a *Aggregator) GetNewTorrentURL() []string {
 		return urls
 	}
 
-	// compile trick pattern
-	var r *regexp.Regexp = nil
-	var err error = nil
-	if a.Trick {
-		r, err = regexp.Compile(a.Pattern)
-		if err != nil {
-			log.Println("Pattern invalid. Skip the feed.")
-			return urls
-		}
-	}
-
 	hasExpectedItem := false
 	cc, _ := gocc.New("t2s") // "t2s" tradisional chinese -> simplified chinese
 	for _, item := range items {
 		// The filtering criteria ignore the distinction between traditional and simplified Chinese,
 		// so here the item.Title is converted to simplified Chinese and compared with the keywords that have already been converted to simplified Chinese.
 		var title string
+		var err error
 		if cc != nil {
 			title, err = cc.Convert(item.Title)
 		}
@@ -93,7 +82,7 @@ func (a *Aggregator) GetNewTorrentURL() []string {
 
 		if a.Trick {
 			// construct magnetic link
-			matchStrings := r.FindStringSubmatch(item.Link)
+			matchStrings := a.r.FindStringSubmatch(item.Link)
 			if len(matchStrings) < 2 {
 				continue
 			}
@@ -118,22 +107,22 @@ func (a *Aggregator) shouldSkipItem(title string) bool {
 	// a.Exclude contain multiple strings, representing an AND relationship.
 	// Each string is treated as a whole.
 	for _, excludeKeyword := range a.Exclude {
-		if strings.Contains(title, strings.ToLower(strings.TrimSpace(excludeKeyword))) {
+		if strings.Contains(title, excludeKeyword) {
 			return true
 		}
 	}
 
 	// apply include filters
-	// a.Include contain multiple strings, representing an OR relationship.
-	// Each string may contain comma separator, the separated parts are in an AND relationship.
 	// Empty a.Include means no filter.
 	if len(a.Include) == 0 {
 		return false
 	}
+	// a.Include contain multiple strings, representing an OR relationship.
+	// Each string may contain comma separator, the separated parts are in an AND relationship.
 	for _, includeKeywords := range a.Include {
 		hasMismatched := false
 		for _, keyword := range strings.Split(includeKeywords, ",") {
-			if !strings.Contains(title, strings.ToLower(strings.TrimSpace(keyword))) {
+			if !strings.Contains(title, strings.TrimSpace(keyword)) {
 				hasMismatched = true
 				break
 			}

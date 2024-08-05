@@ -9,6 +9,8 @@ package main
 import (
 	"log"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/liuzl/gocc"
 	"gopkg.in/yaml.v3"
@@ -32,6 +34,7 @@ type Feed struct {
 	Exclude []string
 	Trick   bool
 	Pattern string
+	r       *regexp.Regexp
 }
 
 // NewConfig return a new Config object
@@ -56,20 +59,35 @@ func NewConfig(filename string) *Config {
 	// so here the Include and Exclude keywords are converted to simplified Chinese.
 	cc, err := gocc.New("t2s") // "t2s" traditional Chinese -> simplified Chinese
 	if err == nil {
-		for _, feed := range config.Feeds {
+		for i := range config.Feeds {
+			feed := &config.Feeds[i]
 			feed.Include = convert(cc, feed.Include)
 			feed.Exclude = convert(cc, feed.Exclude)
 		}
 	} else {
 		log.Println("Cannot perform traditional and simplified Chinese conversion: ", err)
 	}
+
+	// If Trick is true, then the pattern is precompiled.
+	for i := range config.Feeds {
+		if config.Feeds[i].Trick {
+			feed := &config.Feeds[i]
+			r, err := regexp.Compile(feed.Pattern)
+			if err != nil {
+				log.Fatalf("Pattern %s invalid.", feed.Pattern)
+			}
+			feed.r = r
+		}
+	}
+
 	return &config
 }
 
-// convert convert given []string to the expected type
+// convert converts given []string to the expected type, and return in lower case.
 func convert(cc *gocc.OpenCC, texts []string) []string {
 	var simplified []string
 	for _, text := range texts {
+		text = strings.TrimSpace(strings.ToLower(text))
 		result, err := cc.Convert(text)
 		if err != nil {
 			simplified = append(simplified, text)
