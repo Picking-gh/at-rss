@@ -10,9 +10,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jessevdk/go-flags"
 )
@@ -34,15 +36,48 @@ func main() {
 		}
 	}
 
-	config := NewConfig(opt.Config)
+	var config *Config
+	var configLock sync.Mutex
+	var client *Aria2c
 
-	client := NewAria2c(config.Server.Url, config.Server.Token)
+	// Watch config file for changes and reload.
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatalf("Failed to create watcher: %v", err)
+	}
+	defer watcher.Close()
+	err = watcher.Add(opt.Config)
+	if err != nil {
+		log.Fatalf("Failed to watch file: %v", err)
+	}
+	loadConfig := func() {
+		configLock.Lock()
+		defer configLock.Unlock()
+		config = NewConfig(opt.Config)
+		client = NewAria2c(config.Server.Url, config.Server.Token)
+	}
+	go func() {
+		for event := range watcher.Events {
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				log.Println("Config file changed. Reloading...")
+				loadConfig()
+			}
+		}
+	}()
 
+	loadConfig()
 	cache := NewCache()
 
+	// Parse feeds and fire downloading on current config.
+	// In update progress config may change.
 	update := func() {
-		for i := range config.Feeds {
-			feed := &config.Feeds[i]
+		configLock.Lock()
+		configNow := config
+		clientNow := client
+		configLock.Unlock()
+
+		for i := range configNow.Feeds {
+			feed := &configNow.Feeds[i]
 			aggregator := NewAggregator(feed, cache)
 			if aggregator == nil {
 				continue
@@ -50,21 +85,21 @@ func main() {
 
 			urls := aggregator.GetNewTorrentURL()
 			for _, url := range urls {
-				err := client.Add(url)
+				err := clientNow.Add(url)
 				if err != nil {
-					log.Printf("Adding [%s] failed, %s", url, err)
+					log.Printf("Adding [%s] failed, %v", url, err)
 				}
 				time.Sleep(time.Second)
 			}
 
-			client.CleanUp()
+			clientNow.CleanUp()
 		}
 	}
 
 	// Run once
 	update()
 
-	// Create cron job for periodic updating and fire
+	// Create periodic job to update
 	s, err := gocron.NewScheduler()
 	if err != nil {
 		log.Fatal("Unable to create new scheduler")
@@ -81,7 +116,7 @@ func main() {
 	}
 	s.Start()
 
-	// Accept SIGINT or SIGTERM for gracefully shutdown the above cron job
+	// Accept SIGINT or SIGTERM to gracefully shutdown the above periodic job
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
