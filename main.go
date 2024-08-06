@@ -38,10 +38,6 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	client, err := NewAria2c(config.Server.Url, config.Server.Token)
-	if err != nil {
-		os.Exit(1)
-	}
 	cache, err := NewCache()
 	if err != nil {
 		os.Exit(1)
@@ -50,6 +46,12 @@ func main() {
 	// Parse feeds and fire downloading on current config.
 	// In update progress config may change.
 	update := func() {
+		client, err := NewAria2c(config.Server.Url, config.Server.Token)
+		if err != nil {
+			slog.Warn("Failed to connect to aria2c rpc.", "err", err)
+			return
+		}
+
 		for i := range config.Feeds {
 			feed := &config.Feeds[i]
 			aggregator := NewAggregator(feed, cache)
@@ -63,11 +65,12 @@ func main() {
 				if err != nil {
 					slog.Warn("Failed to add ["+url+"].", "err", err)
 				}
-				time.Sleep(time.Second)
 			}
 
-			client.CleanUp()
 		}
+
+		client.CleanUp()
+		client.Close()
 	}
 
 	// Run once

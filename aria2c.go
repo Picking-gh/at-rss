@@ -44,3 +44,8 @@ func (a *Aria2c) Add(uri string) error {
 func (a *Aria2c) CleanUp() {
 	a.client.PurgeDownloadResults()
 }
+
+// Close closes the connection to the aria2 rpc interface
+func (a *Aria2c) Close() {
+	a.client.Close()
+}
