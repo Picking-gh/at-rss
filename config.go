@@ -7,7 +7,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultServerUrl = "http://localhost:6800/jsonrpc"
+const defaultServerUrl = "ws://localhost:6800/jsonrpc"
 const defaultUpdateInterval = 10
 
 // Config is handling the config parsing
@@ -38,15 +38,17 @@ type Feed struct {
 }
 
 // NewConfig return a new Config object
-func NewConfig(filename string) *Config {
+func NewConfig(filename string) (*Config, error) {
 	var config Config
 	source, err := os.ReadFile(filename)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to read config file.", "err", err)
+		return nil, err
 	}
 	err = yaml.Unmarshal(source, &config)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to Unmarshal config file.", "err", err)
+		return nil, err
 	}
 	if config.Server.Url == "" {
 		config.Server.Url = defaultServerUrl
@@ -65,7 +67,7 @@ func NewConfig(filename string) *Config {
 			feed.Exclude = convert(cc, feed.Exclude)
 		}
 	} else {
-		log.Println("Cannot perform traditional and simplified Chinese conversion: ", err)
+		slog.Warn("Failed to perform traditional and simplified Chinese conversion.", "err", err)
 	}
 
 	// If Trick is true, then the pattern is precompiled.
@@ -74,13 +76,14 @@ func NewConfig(filename string) *Config {
 			feed := &config.Feeds[i]
 			r, err := regexp.Compile(feed.Pattern)
 			if err != nil {
-				log.Fatalf("Pattern %s invalid.", feed.Pattern)
+				slog.Error("Pattern [" + feed.Pattern + "] invalid.")
+				return nil, err
 			}
 			feed.r = r
 		}
 	}
 
-	return &config
+	return &config, nil
 }
 
 // convert converts given []string to the expected type, and return in lower case.

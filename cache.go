@@ -9,7 +9,7 @@ package main
 import (
 	"encoding/gob"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path"
 
@@ -25,21 +25,22 @@ type Cache struct {
 }
 
 // NewCache return a new Cache object
-func NewCache() *Cache {
+func NewCache() (*Cache, error) {
 	cache := Cache{}
 
 	path, err := homedir.Expand(cachePath)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to locate cache file path.", "err", err)
+		return nil, err
 	}
 	cache.path = path
 
 	err = readGob(cache.path, &cache.data)
 	if err != nil {
-		log.Println("Empty cache")
+		slog.Info("Empty cache")
 		cache.data = make(map[string]string)
 	}
-	return &cache
+	return &cache, nil
 }
 
 // Get return the value associated with the key or an error if the
@@ -53,20 +54,18 @@ func (c *Cache) Get(key string) (string, error) {
 }
 
 // Set set in the cache the given value with the given key
-func (c *Cache) Set(key string, value string) {
+func (c *Cache) Set(key string, value string) error {
 	c.data[key] = value
 
-	err := writeGob(c.path, c.data)
-	if err != nil {
-		log.Println(err)
-	}
+	return writeGob(c.path, c.data)
 }
 
 func writeGob(filePath string, object interface{}) error {
 	os.Mkdir(path.Dir(filePath), 0744)
 	file, err := os.Create(filePath)
 	if err != nil {
-		log.Fatal(err)
+		slog.Warn("Failed to write cache to disk. May download duplicate files.", "err", err)
+		return err
 	}
 	encoder := gob.NewEncoder(file)
 	err = encoder.Encode(object)

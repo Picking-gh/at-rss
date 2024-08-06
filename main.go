@@ -7,7 +7,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,9 +34,18 @@ func main() {
 		}
 	}
 
-	config := NewConfig(opt.Config)
-	client := NewAria2c(config.Server.Url, config.Server.Token)
-	cache := NewCache()
+	config, err := NewConfig(opt.Config)
+	if err != nil {
+		os.Exit(1)
+	}
+	client, err := NewAria2c(config.Server.Url, config.Server.Token)
+	if err != nil {
+		os.Exit(1)
+	}
+	cache, err := NewCache()
+	if err != nil {
+		os.Exit(1)
+	}
 
 	// Parse feeds and fire downloading on current config.
 	// In update progress config may change.
@@ -52,7 +61,7 @@ func main() {
 			for _, url := range urls {
 				err := client.Add(url)
 				if err != nil {
-					log.Printf("Adding [%s] failed, %v", url, err)
+					slog.Warn("Failed to add ["+url+"].", "err", err)
 				}
 				time.Sleep(time.Second)
 			}
@@ -67,7 +76,8 @@ func main() {
 	// Create periodic job to update
 	s, err := gocron.NewScheduler()
 	if err != nil {
-		log.Fatal("Unable to create new scheduler")
+		slog.Error("Unable to create new scheduler.", "err", err)
+		os.Exit(1)
 	}
 
 	_, err = s.NewJob(
@@ -77,7 +87,8 @@ func main() {
 		gocron.NewTask(update),
 	)
 	if err != nil {
-		log.Fatal("Unable to create periodic tasks")
+		slog.Error("Unable to create periodic tasks.", "err", err)
+		os.Exit(1)
 	}
 	s.Start()
 

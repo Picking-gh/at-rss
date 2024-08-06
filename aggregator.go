@@ -7,7 +7,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/liuzl/gocc"
@@ -26,7 +26,7 @@ func NewAggregator(feed *Feed, cache *Cache) *Aggregator {
 	fp := gofeed.NewParser()
 	contents, err := fp.ParseURL(feed.Url)
 	if err != nil {
-		log.Printf("Fetching [%s] failed, %s", feed.Url, err)
+		slog.Warn("Failed to fetch ["+feed.Url+"].", "err", err)
 		return nil
 	}
 	return &Aggregator{feed, contents, cache}
@@ -75,10 +75,10 @@ func (a *Aggregator) GetNewTorrentURL() []string {
 		// Only print after finding the first item that meets the criteria to reduce unnecessary logs.
 		if !hasExpectedItem {
 			hasExpectedItem = true
-			log.Printf("Fetching torrents from [%s]...", a.Url)
+			slog.Info("Fetching torrents from [" + a.Url + "]...")
 		}
 
-		log.Printf("Got %s", item.Title)
+		slog.Info("Got " + item.Title)
 
 		if a.Trick {
 			// construct magnetic link
@@ -92,6 +92,7 @@ func (a *Aggregator) GetNewTorrentURL() []string {
 			// directly download torrent
 			for _, enclosure := range item.Enclosures {
 				if enclosure.Type == "application/x-bittorrent" {
+					slog.Debug("-", "torrent", enclosure.URL)
 					urls = append(urls, enclosure.URL)
 				}
 			}

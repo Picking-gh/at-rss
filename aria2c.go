@@ -7,7 +7,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/siku2/arigo"
 )
@@ -18,19 +18,20 @@ type Aria2c struct {
 }
 
 // NewAria2c return a new Aria2c object
-func NewAria2c(url string, token string) *Aria2c {
+func NewAria2c(url string, token string) (*Aria2c, error) {
 	c, err := arigo.Dial(url, token)
 
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to create aria2c rpc client.", "err", err)
+		return nil, err
 	}
-	return &Aria2c{&c}
+	return &Aria2c{&c}, nil
 }
 
-// Add add a new magnet link to the aria2c server
-func (a *Aria2c) Add(magnet string) error {
-	_, err := a.client.Download(
-		arigo.URIs(magnet),
+// Add add a new link to the aria2c server
+func (a *Aria2c) Add(uri string) error {
+	_, err := a.client.AddURI(
+		arigo.URIs(uri),
 		nil)
 
 	if err != nil {
