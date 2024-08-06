@@ -54,12 +54,12 @@ func main() {
 
 		for i := range config.Feeds {
 			feed := &config.Feeds[i]
-			aggregator := NewAggregator(feed, cache)
-			if aggregator == nil {
+			parser := NewFeedParser(feed, cache)
+			if parser == nil {
 				continue
 			}
 
-			urls := aggregator.GetNewTorrentURL()
+			urls := parser.GetNewTorrentURL()
 			for _, url := range urls {
 				err := client.Add(url)
 				if err != nil {

@@ -7,10 +7,12 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/liuzl/gocc"
 	"gopkg.in/yaml.v3"
@@ -26,15 +28,11 @@ type Config struct {
 		Token string
 	}
 	UpdateInterval uint64 `yaml:"update_interval"`
-	Feeds          []Feed
+	Feeds          []TorrentParser
 }
-type Feed struct {
-	Url     string
-	Include []string
-	Exclude []string
-	Trick   bool
-	Pattern string
-	r       *regexp.Regexp
+
+var validTags = map[string]struct{}{
+	"Title": {}, "Link": {}, "Description": {}, "Enclosure": {}, "GUID": {},
 }
 
 // NewConfig return a new Config object
@@ -70,10 +68,22 @@ func NewConfig(filename string) (*Config, error) {
 		slog.Warn("Failed to perform traditional and simplified Chinese conversion.", "err", err)
 	}
 
-	// If Trick is true, then the pattern is precompiled.
+	// If Trick is true, then the tag is validated the pattern is precompiled.
 	for i := range config.Feeds {
 		if config.Feeds[i].Trick {
 			feed := &config.Feeds[i]
+			// Validate tag. Transform tag to the same as gofeed.Item fields are except Enclosure. gofeed.Item contains Enclosures
+			tag := capitalize(feed.Tag)
+			if tag == "Guid" {
+				tag = "GUID"
+			}
+			if _, hasTag := validTags[tag]; !hasTag {
+				err := fmt.Errorf("Tag [%s] invalid. Supported tags are title, link, description, enclosure, and guid", feed.Tag)
+				slog.Error(err.Error())
+				return nil, err
+			}
+			feed.Tag = tag
+			// Compile pattern
 			r, err := regexp.Compile(feed.Pattern)
 			if err != nil {
 				slog.Error("Pattern [" + feed.Pattern + "] invalid.")
@@ -99,4 +109,15 @@ func convert(cc *gocc.OpenCC, texts []string) []string {
 		}
 	}
 	return simplified
+}
+
+// capitalize turns s to its captitalized form.
+func capitalize(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+
+	runes := []rune(strings.ToLower(s))
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }

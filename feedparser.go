@@ -8,49 +8,77 @@ package main
 
 import (
 	"log/slog"
+	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/liuzl/gocc"
 	"github.com/mmcdole/gofeed"
 )
 
-// Aggregator is a RSS aggregator object
-type Aggregator struct {
-	*Feed
+// FeedParser is a RSS parsing object
+type FeedParser struct {
+	*TorrentParser
 	contents *gofeed.Feed
 	cache    *Cache
 }
 
-// NewAggregator create a new Aggregator object
-func NewAggregator(feed *Feed, cache *Cache) *Aggregator {
+type TorrentParser struct {
+	FeedUrl string `yaml:"url"`
+	Include []string
+	Exclude []string
+	Trick   bool
+	Pattern string
+	Tag     string
+	r       *regexp.Regexp
+}
+
+// getTagValue returns tag value in *gofeed.Item. For enclosure tag may apear multiple times, return []string for all kinds of tags.
+// tagName is validated before that ensures no errors here.
+func getTagValue(item *gofeed.Item, tagName string) []string {
+	if tagName == "Enclosure" {
+		result := make([]string, len(item.Enclosures))
+		for i, item := range item.Enclosures {
+			result[i] = item.URL
+		}
+		return result
+	} else {
+		v := reflect.ValueOf(item)
+		field := v.FieldByName(tagName)
+		return []string{field.String()}
+	}
+}
+
+// NewFeedParser create a new FeedParser object
+func NewFeedParser(tp *TorrentParser, cache *Cache) *FeedParser {
 	fp := gofeed.NewParser()
-	contents, err := fp.ParseURL(feed.Url)
+	contents, err := fp.ParseURL(tp.FeedUrl)
 	if err != nil {
-		slog.Warn("Failed to fetch ["+feed.Url+"].", "err", err)
+		slog.Warn("Failed to fetch ["+tp.FeedUrl+"].", "err", err)
 		return nil
 	}
-	return &Aggregator{feed, contents, cache}
+	return &FeedParser{tp, contents, cache}
 }
 
 // GetNewItems return all the new items in the RSS feed
-func (a *Aggregator) GetNewItems() []*gofeed.Item {
-	guid, err := a.cache.Get(a.Url)
+func (f *FeedParser) GetNewItems() []*gofeed.Item {
+	guid, err := f.cache.Get(f.FeedUrl)
 	if err != nil {
-		return a.contents.Items[:]
+		return f.contents.Items[:]
 	}
-	for i, item := range a.contents.Items {
+	for i, item := range f.contents.Items {
 		if item.GUID == guid {
-			return a.contents.Items[:i]
+			return f.contents.Items[:i]
 		}
 	}
-	return a.contents.Items[:]
+	return f.contents.Items[:]
 }
 
 // GetNewTorrentURL return the url of all the new items in the RSS feed
-func (a *Aggregator) GetNewTorrentURL() []string {
+func (f *FeedParser) GetNewTorrentURL() []string {
 	urls := make([]string, 0)
 
-	items := a.GetNewItems()
+	items := f.GetNewItems()
 	if len(items) == 0 {
 		return urls
 	}
@@ -69,25 +97,26 @@ func (a *Aggregator) GetNewTorrentURL() []string {
 			title = item.Title
 		}
 
-		if a.shouldSkipItem(strings.ToLower(title)) {
+		if f.shouldSkipItem(strings.ToLower(title)) {
 			continue
 		}
 		// Only print after finding the first item that meets the criteria to reduce unnecessary logs.
 		if !hasExpectedItem {
 			hasExpectedItem = true
-			slog.Info("Fetching torrents from [" + a.Url + "]...")
+			slog.Info("Fetching torrents from [" + f.FeedUrl + "]...")
 		}
 
 		slog.Info("Got " + item.Title)
 
-		if a.Trick {
-			// construct magnetic link
-			matchStrings := a.r.FindStringSubmatch(item.Link)
-			if len(matchStrings) < 2 {
-				continue
+		if f.Trick {
+			// construct magnetic links
+			for _, url := range getTagValue(item, f.Tag) {
+				matchStrings := f.r.FindStringSubmatch(url)
+				if len(matchStrings) < 2 {
+					continue
+				}
+				urls = append(urls, "magnet:?xt=urn:btih:"+matchStrings[1])
 			}
-			url := "magnet:?xt=urn:btih:" + matchStrings[1]
-			urls = append(urls, url)
 		} else {
 			// directly download torrent
 			for _, enclosure := range item.Enclosures {
@@ -98,29 +127,29 @@ func (a *Aggregator) GetNewTorrentURL() []string {
 			}
 		}
 	}
-	a.cache.Set(a.Url, items[0].GUID)
+	f.cache.Set(f.FeedUrl, items[0].GUID)
 	return urls
 }
 
 // shouldSkipItem checks if an item should be skipped based on include and exclude filters
-func (a *Aggregator) shouldSkipItem(title string) bool {
+func (f *FeedParser) shouldSkipItem(title string) bool {
 	// apply exclude filters
-	// a.Exclude contain multiple strings, representing an AND relationship.
+	// f.Exclude contain multiple strings, representing an AND relationship.
 	// Each string is treated as a whole.
-	for _, excludeKeyword := range a.Exclude {
+	for _, excludeKeyword := range f.Exclude {
 		if strings.Contains(title, excludeKeyword) {
 			return true
 		}
 	}
 
 	// apply include filters
-	// Empty a.Include means no filter.
-	if len(a.Include) == 0 {
+	// Empty f.Include means no filter.
+	if len(f.Include) == 0 {
 		return false
 	}
-	// a.Include contain multiple strings, representing an OR relationship.
+	// f.Include contain multiple strings, representing an OR relationship.
 	// Each string may contain comma separator, the separated parts are in an AND relationship.
-	for _, includeKeywords := range a.Include {
+	for _, includeKeywords := range f.Include {
 		hasMismatched := false
 		for _, keyword := range strings.Split(includeKeywords, ",") {
 			if !strings.Contains(title, strings.TrimSpace(keyword)) {
