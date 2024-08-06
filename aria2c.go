@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/zyxar/argo/rpc"
@@ -21,10 +20,9 @@ type Aria2c struct {
 
 // NewAria2c return a new Aria2c object
 func NewAria2c(url string, token string) (*Aria2c, error) {
-	c, err := rpc.New(context.Background(), url, token, 5*time.Second, nil)
+	c, err := rpc.New(context.TODO(), url, token, 30*time.Second, nil)
 
 	if err != nil {
-		slog.Error("Failed to create aria2c rpc client.", "err", err)
 		return nil, err
 	}
 	return &Aria2c{c}, nil

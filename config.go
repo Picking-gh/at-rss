@@ -7,7 +7,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
 	"os"
 	"regexp"
@@ -78,7 +78,7 @@ func NewConfig(filename string) (*Config, error) {
 				tag = "GUID"
 			}
 			if _, hasTag := validTags[tag]; !hasTag {
-				err := fmt.Errorf("Tag [%s] invalid. Supported tags are title, link, description, enclosure, and guid", feed.Tag)
+				err := errors.New("Tag [" + feed.Tag + "] invalid. Supported tags are title, link, description, enclosure, and guid.")
 				slog.Error(err.Error())
 				return nil, err
 			}
