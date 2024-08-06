@@ -8,7 +8,6 @@ package main
 
 import (
 	"log/slog"
-	"reflect"
 	"regexp"
 	"strings"
 
@@ -36,17 +35,23 @@ type TorrentParser struct {
 // getTagValue returns tag value in *gofeed.Item. For enclosure tag may apear multiple times, return []string for all kinds of tags.
 // tagName is validated before that ensures no errors here.
 func getTagValue(item *gofeed.Item, tagName string) []string {
-	if tagName == "Enclosure" {
+	switch tagName {
+	case "Title":
+		return []string{item.Title}
+	case "Link":
+		return []string{item.Link}
+	case "Description":
+		return []string{item.Description}
+	case "Enclosure":
 		result := make([]string, len(item.Enclosures))
 		for i, item := range item.Enclosures {
 			result[i] = item.URL
 		}
 		return result
-	} else {
-		v := reflect.ValueOf(item)
-		field := v.FieldByName(tagName)
-		return []string{field.String()}
+	case "GUID":
+		return []string{item.GUID}
 	}
+	return []string{}
 }
 
 // NewFeedParser create a new FeedParser object
@@ -121,7 +126,6 @@ func (f *FeedParser) GetNewTorrentURL() []string {
 			// directly download torrent
 			for _, enclosure := range item.Enclosures {
 				if enclosure.Type == "application/x-bittorrent" {
-					slog.Debug("-", "torrent", enclosure.URL)
 					urls = append(urls, enclosure.URL)
 				}
 			}
