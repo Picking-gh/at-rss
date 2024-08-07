@@ -23,7 +23,7 @@ type FeedParser struct {
 }
 
 type TorrentParser struct {
-	FeedUrl string `yaml:"url"`
+	FeedUrl string
 	Include []string
 	Exclude []string
 	Trick   bool
