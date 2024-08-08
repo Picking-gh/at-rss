@@ -33,25 +33,19 @@ const defaultFetchInterval = 10
 // 	Feeds          []TorrentParser
 // }
 
-type tasks struct {
-	a []*aria2cTask
-	t []*transmissionTask
+type Tasks struct {
+	t []*Task
 }
 
-type aria2cTask struct {
+type Task struct {
 	Server struct {
-		Url   string
-		Token string
-	}
-	FetchInterval uint64
-	TorrentParser
-}
-type transmissionTask struct {
-	Server struct {
-		Host string
-		Port uint16
-		User string
-		Pswd string
+		RpcType string //"aria2c" or "transmission"
+		Url     string // for aria2c
+		Token   string // for aria2c
+		Host    string // for transmission rpc
+		Port    uint16 // for transmission rpc
+		User    string // for transmission rpc
+		Pswd    string // for transmission rpc
 	}
 	FetchInterval uint64
 	TorrentParser
@@ -90,7 +84,7 @@ var validTags = map[string]struct{}{
 //     feed: http://example.com/feed3
 
 // NewConfig return a new Config object
-func LoadConfig(filename string) (*tasks, error) {
+func LoadConfig(filename string) (*Tasks, error) {
 	var config map[string]interface{}
 	source, err := os.ReadFile(filename)
 	if err != nil {
@@ -127,9 +121,11 @@ func LoadConfig(filename string) (*tasks, error) {
 			return nil, err
 		}
 
-		var tp TorrentParser
+		var tp Task
 		for k, v := range task {
 			switch strings.ToLower(k) {
+			case "aria2c":
+			case "transmission":
 			case "feed":
 				url, ok := v.(string)
 				if !ok {
@@ -138,6 +134,7 @@ func LoadConfig(filename string) (*tasks, error) {
 					return nil, err
 				}
 				tp.FeedUrl = url
+			case "interval":
 			case "filter":
 				filter, ok := v.(map[string][]string)
 				if ok {
