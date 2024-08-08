@@ -102,7 +102,7 @@ func LoadConfig(filename string) (*Tasks, error) {
 		if !ok {
 			continue
 		}
-		// keys must contain aria2c/transmission and feed. filter, extracter and interval are optional.
+		// keys must contain aria2c/transmission and feed. filter, extracter and interval are optional. All in lowercase.
 		_, hasAria2c := task["aria2c"]
 		_, hasTrasmission := task["transmission"]
 		if hasAria2c && hasTrasmission {
@@ -121,11 +121,36 @@ func LoadConfig(filename string) (*Tasks, error) {
 			return nil, err
 		}
 
-		var tp Task
+		t := &Task{}
 		for k, v := range task {
 			switch strings.ToLower(k) {
 			case "aria2c":
+				server, ok := v.(map[string]string)
+				if ok && server != nil {
+					t.Server.Url = server["url"]
+					t.Server.Token = server["token"]
+					if len(t.Server.Url) == 0 {
+						t.Server.Url = defaultAria2cRpcUrl
+					}
+				} else {
+					t.Server.Url = defaultAria2cRpcUrl
+				}
 			case "transmission":
+				server, ok := v.(map[string]interface{})
+				if ok && server != nil {
+					t.Server.Host, ok = server["host"].(string)
+					if !ok {
+						t.Server.Host = defaultTransmissionRpcHost
+					}
+					port, ok := server["port"].(int)
+					if !ok {
+						t.Server.Port = 9091
+					} else {
+						t.Server.Port = (uint16(port))
+					}
+					t.Server.User, ok = server["username"].(string)
+					t.Server.Pswd, ok = server["password"].(string)
+				}
 			case "feed":
 				url, ok := v.(string)
 				if !ok {
