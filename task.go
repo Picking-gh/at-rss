@@ -36,12 +36,13 @@ type RpcClient interface {
 }
 
 // Start begins executing the task at regular intervals
-func (t *Task) Start(wg *sync.WaitGroup, ctx context.Context, cache *Cache) {
+func (t *Task) Start(ctx context.Context, wg *sync.WaitGroup, cache *Cache) {
 	defer wg.Done()
 	ticker := time.NewTicker(time.Duration(t.FetchInterval) * time.Minute)
 	defer ticker.Stop()
 	t.ctx = ctx
 
+	t.FetchTorrents(cache)
 	for {
 		select {
 		case <-ticker.C:

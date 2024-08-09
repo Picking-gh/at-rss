@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/jessevdk/go-flags"
 )
@@ -48,7 +49,8 @@ func main() {
 
 	for _, task := range *tasks {
 		wg.Add(1)
-		go task.Start(&wg, ctx, cache)
+		go task.Start(ctx, &wg, cache)
+		time.Sleep(time.Second * 5)
 	}
 
 	// Accept SIGINT or SIGTERM to gracefully shutdown the above periodic job
