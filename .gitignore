@@ -23,4 +23,4 @@ go.work.sum
 
 # env file
 .env
-aria2c-rss
+at-rss

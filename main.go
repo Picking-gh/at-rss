@@ -16,7 +16,7 @@ import (
 )
 
 type options struct {
-	Config string `short:"c" long:"conf" description:"Config file" default:"/etc/aria2c-rss.conf"`
+	Config string `short:"c" long:"conf" description:"Config file" default:"/etc/at-rss.conf"`
 }
 
 var opt options
