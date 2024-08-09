@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ type Task struct {
 	}
 	FetchInterval uint64
 	tp            *TorrentParser
-	stop          chan bool
+	ctx           context.Context
 }
 
 // RpcClient is the interface for both aria2c and transmission rpc client.
@@ -35,16 +36,17 @@ type RpcClient interface {
 }
 
 // Start begins executing the task at regular intervals
-func (t *Task) Start(wg *sync.WaitGroup, cache *Cache) {
+func (t *Task) Start(wg *sync.WaitGroup, ctx context.Context, cache *Cache) {
 	defer wg.Done()
 	ticker := time.NewTicker(time.Duration(t.FetchInterval) * time.Minute)
 	defer ticker.Stop()
+	t.ctx = ctx
 
 	for {
 		select {
 		case <-ticker.C:
 			t.FetchTorrents(cache)
-		case <-t.stop:
+		case <-t.ctx.Done():
 			return
 		}
 	}
@@ -57,13 +59,13 @@ func (t *Task) FetchTorrents(cache *Cache) {
 
 	switch t.Server.RpcType {
 	case "aria2c":
-		client, err = NewAria2c(t.Server.Url, t.Server.Token)
+		client, err = NewAria2c(t.ctx, t.Server.Url, t.Server.Token)
 		if err != nil {
 			slog.Warn("Failed to connect to aria2c rpc.", "err", err)
 			return
 		}
 	case "transmission":
-		client, err = NewTransmission(t.Server.Host, t.Server.Port, t.Server.User, t.Server.Pswd)
+		client, err = NewTransmission(t.ctx, t.Server.Host, t.Server.Port, t.Server.User, t.Server.Pswd)
 		if err != nil {
 			slog.Warn("Failed to connect to transmission rpc.", "err", err)
 			return

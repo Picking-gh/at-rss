@@ -8,10 +8,11 @@ package main
 
 import (
 	"encoding/gob"
-	"fmt"
+	"errors"
 	"log/slog"
 	"os"
 	"path"
+	"sync"
 
 	"github.com/atrox/homedir"
 )
@@ -20,6 +21,7 @@ const cachePath = "~/.cache/at-rss.gob"
 
 // Cache handle a key value storage
 type Cache struct {
+	mu   sync.RWMutex
 	path string
 	data map[string]string
 }
@@ -46,15 +48,18 @@ func NewCache() (*Cache, error) {
 // Get return the value associated with the key or an error if the
 // cache doesn't contains the key
 func (c *Cache) Get(key string) (string, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	v, ok := c.data[key]
 	if !ok {
-		return "", fmt.Errorf("no match found for key %s", key)
+		return "", errors.New("no match found for key " + key)
 	}
 	return v, nil
 }
 
 // Set set in the cache the given value with the given key
 func (c *Cache) Set(key string, value string) error {
+	c.mu.Lock()
 	c.data[key] = value
 
 	return writeGob(c.path, c.data)

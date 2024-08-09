@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"sync"
@@ -42,21 +43,19 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	for _, task := range *tasks {
 		wg.Add(1)
-		go task.Start(&wg, cache)
+		go task.Start(&wg, ctx, cache)
 	}
 
 	// Accept SIGINT or SIGTERM to gracefully shutdown the above periodic job
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-
-	// Stop tasks
-	for _, task := range *tasks {
-		close(task.stop)
-	}
+	cancel()
 
 	// Wait for all tasks to finish
 	wg.Wait()

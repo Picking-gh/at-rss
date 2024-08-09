@@ -15,10 +15,11 @@ import (
 // Transmission handle the transmission api request
 type Transmission struct {
 	client *transmissionrpc.Client
+	ctx    context.Context
 }
 
 // NewTransmission return a new Transmission object
-func NewTransmission(host string, port uint16, user string, pswd string) (*Transmission, error) {
+func NewTransmission(ctx context.Context, host string, port uint16, user string, pswd string) (*Transmission, error) {
 
 	t, err := transmissionrpc.New(host, user, pswd,
 		&transmissionrpc.AdvancedConfig{
@@ -27,18 +28,15 @@ func NewTransmission(host string, port uint16, user string, pswd string) (*Trans
 	if err != nil {
 		return nil, err
 	}
-	return &Transmission{t}, nil
+	return &Transmission{t, ctx}, nil
 }
 
 // Add add a new magnet link to the transmission server
 func (t *Transmission) AddTorrent(magnet string) error {
-	_, err := t.client.TorrentAdd(context.TODO(), transmissionrpc.TorrentAddPayload{
+	_, err := t.client.TorrentAdd(t.ctx, transmissionrpc.TorrentAddPayload{
 		Filename: &magnet,
 	})
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // Close do nothing but satisfy RpcClient interface
