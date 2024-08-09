@@ -75,7 +75,7 @@ func LoadConfig(filename string) (*Tasks, error) {
 			return nil, err
 		}
 
-		t := &Task{tp: &TorrentParser{}}
+		t := &Task{tp: &TorrentParser{}, FetchInterval: defaultFetchInterval}
 		for k, v := range task {
 			switch strings.ToLower(k) {
 			case "aria2c":
@@ -123,37 +123,41 @@ func LoadConfig(filename string) (*Tasks, error) {
 				if interval <= 0 {
 					interval = defaultFetchInterval
 				}
-				t.FetchInterval = uint64(interval)
+				t.FetchInterval = int64(interval)
 			case "filter":
-				filter, ok := v.(map[string][]string)
-				if ok {
-					t.tp.Include = convert(cc, filter["include"])
-					t.tp.Exclude = convert(cc, filter["exclude"])
+				if tryFilter, ok := v.(map[string]interface{}); ok {
+					filter := convert2(tryFilter)
+					if ok {
+						t.tp.Include = convert(cc, filter["include"])
+						t.tp.Exclude = convert(cc, filter["exclude"])
+					}
 				}
 			case "extracter":
-				extract, ok := v.(map[string]string)
-				if ok && extract != nil {
-					// Validate tag. Transform tag to the same as gofeed.Item fields are except Enclosure. gofeed.Item contains Enclosures
-					tag := capitalize(extract["tag"])
-					if tag == "Guid" {
-						tag = "GUID"
+				if tryExtract, ok := v.(map[string]interface{}); ok {
+					extract := convert3(tryExtract)
+					if ok && extract != nil {
+						// Validate tag. Transform tag to the same as gofeed.Item fields are except Enclosure. gofeed.Item contains Enclosures
+						tag := capitalize(extract["tag"])
+						if tag == "Guid" {
+							tag = "GUID"
+						}
+						if _, hasTag := validTags[tag]; !hasTag {
+							err := errors.New("Tag [" + tag + "] invalid. Supported tags are title, link, description, enclosure, and guid.")
+							slog.Error(err.Error())
+							return nil, err
+						}
+						t.tp.Tag = tag
+						// Compile pattern
+						pattern := extract["pattern"]
+						r, err := regexp.Compile(pattern)
+						if err != nil {
+							slog.Error("Pattern [" + pattern + "] invalid.")
+							return nil, err
+						}
+						t.tp.r = r
+						// Trick is true, only if tag is validated pattern is precompiled.
+						t.tp.Trick = true
 					}
-					if _, hasTag := validTags[tag]; !hasTag {
-						err := errors.New("Tag [" + tag + "] invalid. Supported tags are title, link, description, enclosure, and guid.")
-						slog.Error(err.Error())
-						return nil, err
-					}
-					t.tp.Tag = tag
-					// Compile pattern
-					pattern := extract["pattern"]
-					r, err := regexp.Compile(pattern)
-					if err != nil {
-						slog.Error("Pattern [" + pattern + "] invalid.")
-						return nil, err
-					}
-					t.tp.r = r
-					// Trick is true, only if tag is validated pattern is precompiled.
-					t.tp.Trick = true
 				}
 			}
 		}
@@ -190,4 +194,41 @@ func capitalize(s string) string {
 	runes := []rune(strings.ToLower(s))
 	runes[0] = unicode.ToUpper(runes[0])
 	return string(runes)
+}
+
+// convert2 convers rawMap to map[string][]string
+func convert2(rawMap map[string]interface{}) map[string][]string {
+	result := make(map[string][]string)
+	for key, value := range rawMap {
+		if slice, ok := value.([]interface{}); ok {
+			strSlice := make([]string, len(slice))
+			i := 0
+			for _, item := range slice {
+				if str, ok := item.(string); ok {
+					strSlice[i] = str
+					i++
+				}
+			}
+			result[key] = strSlice
+		} else {
+			if slice, ok := value.(string); ok {
+				result[key] = []string{slice}
+			}
+		}
+	}
+	return result
+}
+
+// convert3 convers rawMap to map[string]string
+func convert3(rawMap map[string]interface{}) map[string]string {
+	// Convert rawMap to map[string]string
+	result := make(map[string]string)
+	for key, value := range rawMap {
+		if item, ok := value.(interface{}); ok {
+			if str, ok := item.(string); ok {
+				result[key] = str
+			}
+		}
+	}
+	return result
 }

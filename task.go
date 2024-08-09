@@ -23,7 +23,7 @@ type Task struct {
 		User    string // for transmission rpc
 		Pswd    string // for transmission rpc
 	}
-	FetchInterval uint64
+	FetchInterval int64
 	tp            *TorrentParser
 	ctx           context.Context
 }
@@ -76,7 +76,7 @@ func (t *Task) FetchTorrents(cache *Cache) {
 		client.Close()
 	}()
 
-	parser := NewFeedParser(t.tp, cache)
+	parser := NewFeedParser(t.ctx, t.tp, cache)
 	if parser == nil {
 		return
 	}

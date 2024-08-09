@@ -7,9 +7,11 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/liuzl/gocc"
 	"github.com/mmcdole/gofeed"
@@ -55,9 +57,10 @@ func getTagValue(item *gofeed.Item, tagName string) []string {
 }
 
 // NewFeedParser create a new FeedParser object
-func NewFeedParser(tp *TorrentParser, cache *Cache) *FeedParser {
+func NewFeedParser(ctx context.Context, tp *TorrentParser, cache *Cache) *FeedParser {
 	fp := gofeed.NewParser()
-	contents, err := fp.ParseURL(tp.FeedUrl)
+	ctx_, _ := context.WithTimeout(ctx, time.Second*30)
+	contents, err := fp.ParseURLWithContext(tp.FeedUrl, ctx_)
 	if err != nil {
 		slog.Warn("Failed to fetch ["+tp.FeedUrl+"].", "err", err)
 		return nil
@@ -118,6 +121,7 @@ func (f *FeedParser) GetNewTorrentURL() []string {
 			for _, url := range getTagValue(item, f.Tag) {
 				matchStrings := f.r.FindStringSubmatch(url)
 				if len(matchStrings) < 2 {
+					slog.Warn(f.Pattern + " matched no hash. Skipped.")
 					continue
 				}
 				urls = append(urls, "magnet:?xt=urn:btih:"+matchStrings[1])
