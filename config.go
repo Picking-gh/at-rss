@@ -12,7 +12,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/liuzl/gocc"
 	"gopkg.in/yaml.v3"
@@ -24,7 +23,7 @@ const defaultTransmissionRpcPort = 9091
 const defaultFetchInterval = 10
 
 var validTags = map[string]struct{}{
-	"Title": {}, "Link": {}, "Description": {}, "Enclosure": {}, "GUID": {},
+	"title": {}, "link": {}, "description": {}, "enclosure": {}, "guid": {},
 }
 
 type Tasks []*Task
@@ -60,22 +59,22 @@ func LoadConfig(filename string) (*Tasks, error) {
 		_, hasAria2c := task["aria2c"]
 		_, hasTrasmission := task["transmission"]
 		if hasAria2c && hasTrasmission {
-			err := errors.New("Accept one rpc server but two exit.")
-			slog.Error(err.Error())
+			err := errors.New("accept one rpc server but two exit")
+			slog.Error("Configuration file format error. ", "err", err)
 			return nil, err
 		} else if !hasAria2c && !hasTrasmission {
-			err := errors.New("Need one rpc server but none exits.")
-			slog.Error(err.Error())
+			err := errors.New("need one rpc server but none exits")
+			slog.Error("Configuration file format error. ", "err", err)
 			return nil, err
 		}
 		_, hasFeed := task["feed"]
 		if !hasFeed {
-			err := errors.New("Need feed but none exits.")
-			slog.Error(err.Error())
+			err := errors.New("need feed url but none exits")
+			slog.Error("Configuration file format error. ", "err", err)
 			return nil, err
 		}
 
-		t := &Task{tp: &TorrentParser{}, FetchInterval: defaultFetchInterval}
+		t := &Task{pc: &ParserConfig{}, FetchInterval: defaultFetchInterval}
 		for k, v := range task {
 			switch strings.ToLower(k) {
 			case "aria2c":
@@ -113,11 +112,11 @@ func LoadConfig(filename string) (*Tasks, error) {
 			case "feed":
 				url, ok := v.(string)
 				if !ok || len(url) == 0 {
-					err := errors.New("Feed not valid.")
-					slog.Error(err.Error())
+					err := errors.New("feed not valid")
+					slog.Error("Configuration file format error. ", "err", err)
 					return nil, err
 				}
-				t.tp.FeedUrl = url
+				t.pc.FeedUrl = url
 			case "interval":
 				interval, _ := v.(int)
 				if interval <= 0 {
@@ -127,36 +126,32 @@ func LoadConfig(filename string) (*Tasks, error) {
 			case "filter":
 				if tryFilter, ok := v.(map[string]interface{}); ok {
 					filter := convert2(tryFilter)
-					if ok {
-						t.tp.Include = convert(cc, filter["include"])
-						t.tp.Exclude = convert(cc, filter["exclude"])
-					}
+					t.pc.Include = convert(cc, filter["include"])
+					t.pc.Exclude = convert(cc, filter["exclude"])
 				}
 			case "extracter":
 				if tryExtract, ok := v.(map[string]interface{}); ok {
 					extract := convert3(tryExtract)
-					if ok && extract != nil {
+					if extract != nil {
 						// Validate tag. Transform tag to the same as gofeed.Item fields are except Enclosure. gofeed.Item contains Enclosures
-						tag := capitalize(extract["tag"])
-						if tag == "Guid" {
-							tag = "GUID"
-						}
+						tag := strings.ToLower(extract["tag"])
 						if _, hasTag := validTags[tag]; !hasTag {
-							err := errors.New("Tag [" + tag + "] invalid. Supported tags are title, link, description, enclosure, and guid.")
-							slog.Error(err.Error())
+							err := errors.New("tag [" + tag + "] invalid. Supported tags are title, link, description, enclosure, and guid")
+							slog.Error("Configuration file format error. ", "err", err)
 							return nil, err
 						}
-						t.tp.Tag = tag
+						t.pc.Tag = tag
 						// Compile pattern
 						pattern := extract["pattern"]
 						r, err := regexp.Compile(pattern)
 						if err != nil {
-							slog.Error("Pattern [" + pattern + "] invalid.")
+							err := errors.New("pattern [" + pattern + "] invalid")
+							slog.Error("Configuration file format error. ", "err", err)
 							return nil, err
 						}
-						t.tp.r = r
+						t.pc.r = r
 						// Trick is true, only if tag is validated pattern is precompiled.
-						t.tp.Trick = true
+						t.pc.Trick = true
 					}
 				}
 			}
@@ -185,17 +180,6 @@ func convert(cc *gocc.OpenCC, texts []string) []string {
 	return simplified
 }
 
-// capitalize turns s to its captitalized form.
-func capitalize(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-
-	runes := []rune(strings.ToLower(s))
-	runes[0] = unicode.ToUpper(runes[0])
-	return string(runes)
-}
-
 // convert2 convers rawMap to map[string][]string
 func convert2(rawMap map[string]interface{}) map[string][]string {
 	result := make(map[string][]string)
@@ -221,13 +205,10 @@ func convert2(rawMap map[string]interface{}) map[string][]string {
 
 // convert3 convers rawMap to map[string]string
 func convert3(rawMap map[string]interface{}) map[string]string {
-	// Convert rawMap to map[string]string
 	result := make(map[string]string)
 	for key, value := range rawMap {
-		if item, ok := value.(interface{}); ok {
-			if str, ok := item.(string); ok {
-				result[key] = str
-			}
+		if str, ok := value.(string); ok {
+			result[key] = str
 		}
 	}
 	return result

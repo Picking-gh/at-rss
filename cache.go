@@ -19,11 +19,11 @@ import (
 
 const cachePath = "~/.cache/at-rss.gob"
 
-// Cache handle a key value storage
+// Cache logs the head for each feed.
 type Cache struct {
+	path string // cache file path
 	mu   sync.RWMutex
-	path string
-	data map[string]string
+	data map[string]string //key:feed url, value: head item guid
 }
 
 // NewCache return a new Cache object

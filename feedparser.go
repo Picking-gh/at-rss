@@ -17,18 +17,19 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-// FeedParser is a RSS parsing object
-type FeedParser struct {
-	*TorrentParser
+// Feed keeps a RSS feed parsing configurations, parsed content and head item cache.
+type Feed struct {
+	*ParserConfig
 	contents *gofeed.Feed
 	cache    *Cache
 }
 
-type TorrentParser struct {
+// ParserConfig saves the parameters read from the configuration file.
+type ParserConfig struct {
 	FeedUrl string
 	Include []string
 	Exclude []string
-	Trick   bool
+	Trick   bool // Whether to apply the extractor to reconstruct the magnet link
 	Pattern string
 	Tag     string
 	r       *regexp.Regexp
@@ -38,38 +39,40 @@ type TorrentParser struct {
 // tagName is validated before that ensures no errors here.
 func getTagValue(item *gofeed.Item, tagName string) []string {
 	switch tagName {
-	case "Title":
+	case "title":
 		return []string{item.Title}
-	case "Link":
+	case "link":
 		return []string{item.Link}
-	case "Description":
+	case "description":
 		return []string{item.Description}
-	case "Enclosure":
+	case "enclosure":
 		result := make([]string, len(item.Enclosures))
 		for i, item := range item.Enclosures {
 			result[i] = item.URL
 		}
 		return result
-	case "GUID":
+	case "guid":
 		return []string{item.GUID}
 	}
 	return []string{}
 }
 
-// NewFeedParser create a new FeedParser object
-func NewFeedParser(ctx context.Context, tp *TorrentParser, cache *Cache) *FeedParser {
+// NewFeedParser create a new Feed object
+func NewFeedParser(ctx context.Context, pc *ParserConfig, cache *Cache) *Feed {
+	ctx_, cancel := context.WithTimeout(ctx, time.Second*30)
+	defer cancel()
+
 	fp := gofeed.NewParser()
-	ctx_, _ := context.WithTimeout(ctx, time.Second*30)
-	contents, err := fp.ParseURLWithContext(tp.FeedUrl, ctx_)
+	contents, err := fp.ParseURLWithContext(pc.FeedUrl, ctx_)
 	if err != nil {
-		slog.Warn("Failed to fetch ["+tp.FeedUrl+"].", "err", err)
+		slog.Warn("Failed to fetch ["+pc.FeedUrl+"].", "err", err)
 		return nil
 	}
-	return &FeedParser{tp, contents, cache}
+	return &Feed{pc, contents, cache}
 }
 
 // GetNewItems return all the new items in the RSS feed
-func (f *FeedParser) GetNewItems() []*gofeed.Item {
+func (f *Feed) GetNewItems() []*gofeed.Item {
 	guid, err := f.cache.Get(f.FeedUrl)
 	if err != nil {
 		return f.contents.Items[:]
@@ -83,7 +86,7 @@ func (f *FeedParser) GetNewItems() []*gofeed.Item {
 }
 
 // GetNewTorrentURL return the url of all the new items in the RSS feed
-func (f *FeedParser) GetNewTorrentURL() []string {
+func (f *Feed) GetNewTorrentURL() []string {
 	urls := make([]string, 0)
 
 	items := f.GetNewItems()
@@ -140,7 +143,7 @@ func (f *FeedParser) GetNewTorrentURL() []string {
 }
 
 // shouldSkipItem checks if an item should be skipped based on include and exclude filters
-func (f *FeedParser) shouldSkipItem(title string) bool {
+func (f *Feed) shouldSkipItem(title string) bool {
 	// apply exclude filters
 	// f.Exclude contain multiple strings, representing an AND relationship.
 	// Each string is treated as a whole.
