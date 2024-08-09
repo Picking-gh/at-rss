@@ -29,7 +29,7 @@ func NewAria2c(url string, token string) (*Aria2c, error) {
 }
 
 // Add add a new link to the aria2c server
-func (a *Aria2c) Add(uri string) error {
+func (a *Aria2c) AddTorrent(uri string) error {
 	_, err := a.client.AddURI([]string{uri})
 
 	if err != nil {

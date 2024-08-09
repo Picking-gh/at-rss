@@ -7,13 +7,11 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
-	"time"
 
-	"github.com/go-co-op/gocron/v2"
 	"github.com/jessevdk/go-flags"
 )
 
@@ -34,7 +32,7 @@ func main() {
 		}
 	}
 
-	config, err := NewConfig(opt.Config)
+	tasks, err := LoadConfig(opt.Config)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -43,61 +41,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse feeds and fire downloading on current config.
-	// In update progress config may change.
-	update := func() {
-		client, err := NewAria2c(config.Server.Url, config.Server.Token)
-		if err != nil {
-			slog.Warn("Failed to connect to aria2c rpc.", "err", err)
-			return
-		}
+	var wg sync.WaitGroup
 
-		for i := range config.Feeds {
-			feed := &config.Feeds[i]
-			parser := NewFeedParser(feed, cache)
-			if parser == nil {
-				continue
-			}
-
-			urls := parser.GetNewTorrentURL()
-			for _, url := range urls {
-				err := client.Add(url)
-				if err != nil {
-					slog.Warn("Failed to add ["+url+"].", "err", err)
-				}
-			}
-
-		}
-
-		client.CleanUp()
-		client.Close()
+	for _, task := range *tasks {
+		wg.Add(1)
+		go task.Start(&wg, cache)
 	}
-
-	// Run once
-	update()
-
-	// Create periodic job to update
-	s, err := gocron.NewScheduler()
-	if err != nil {
-		slog.Error("Unable to create new scheduler.", "err", err)
-		os.Exit(1)
-	}
-
-	_, err = s.NewJob(
-		gocron.DurationJob(
-			time.Duration(config.UpdateInterval)*time.Minute,
-		),
-		gocron.NewTask(update),
-	)
-	if err != nil {
-		slog.Error("Unable to create periodic tasks.", "err", err)
-		os.Exit(1)
-	}
-	s.Start()
 
 	// Accept SIGINT or SIGTERM to gracefully shutdown the above periodic job
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	s.Shutdown()
+
+	// Stop tasks
+	for _, task := range *tasks {
+		close(task.stop)
+	}
+
+	// Wait for all tasks to finish
+	wg.Wait()
 }
