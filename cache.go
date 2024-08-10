@@ -37,7 +37,7 @@ func NewCache() (*Cache, error) {
 	}
 	cache.path = filepath.Join(homeDir, cachePath)
 
-	if err := readGob(cache.path, &cache.data); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := readGob(cache.path, &cache.data); err != nil {
 		slog.Warn("Failed to read cache, initializing empty cache.", "err", err)
 	}
 

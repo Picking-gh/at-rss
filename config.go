@@ -95,7 +95,7 @@ func parseTask(task map[string]interface{}, cc *gocc.OpenCC) (*Task, error) {
 		return nil, errors.New("feed section missing")
 	}
 
-	t := &Task{pc: &ParserConfig{}, FetchInterval: defaultFetchInterval}
+	t := &Task{pc: &ParserConfig{}, FetchInterval: defaultFetchInterval * time.Minute}
 
 	for k, v := range task {
 		switch strings.ToLower(k) {
@@ -184,6 +184,7 @@ func parseExtracterConfig(t *Task, v interface{}) error {
 	if err != nil {
 		return errors.New("invalid 'pattern': " + pattern + " in extracter")
 	}
+	t.pc.Pattern = pattern
 	t.pc.r = r
 
 	t.pc.Trick = true
