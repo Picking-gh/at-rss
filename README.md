@@ -7,13 +7,13 @@ This project, named **at-rss** (covering both **aria2c-rss** and **transmission-
 ## Key Features
 
 - **Magnet Link Extraction:**  
-  When an `extracter` is specified in the `at-rss.conf` file, the script extracts a hash from a designated element (e.g., `title`, `link`, `description`, `enclosure`, or `guid`) using a user-defined regular expression pattern (this script use `bith`, the pattern is `"([a-f0-9]{40})"`). This hash is then used to reconstruct a magnet link, replacing the original link in the `enclosure` element.
+  When an `extracter` is specified in the `at-rss.conf` file, the script extracts a hash from a designated element (e.g., `title`, `link`, `description`, `enclosure`, or `guid`) using a user-defined regular expression pattern. This hash is then used to reconstruct a magnet link, replacing the original link in the `enclosure` element. This script uses `bith`, the pattern is usually `"([a-f0-9]{40})"`.
 
 - **Support for aria2c and transmission:**  
-  The script supports both aria2c and Transmission, allowing users to choose their preferred torrent client—one for downloading BT and the other for PT. You can simply specify either `aria2c` or `transmission` to go, as many users start them with the default configuration.
+  This script supports both aria2c and Transmission, giving users the flexibility to choose their preferred torrent client—whether it's for downloading BT or PT, for example. This is done by specifying `aria2c` or `transmission` for each feed. This is probably not the best way, but it works. 
 
 - **Keyword Filtering:**  
-  Filters can be applied to the `title` element of RSS items, allowing for both inclusion and exclusion criteria. The filters support complex conditions, such as multiple keywords with AND/OR logic. For additional details on keyword filtering and configuration, please refer to the `at-rss.conf` file.
+  Filters (not using regular expressions) can be applied to the `title` element of RSS items, allowing for both inclusion and exclusion criteria. These filters support simple combining conditions with AND/OR logic. For more details on keyword filtering and configuration, please refer to the `at-rss.conf` file..
 
 **Note:**  
 The magnet link extraction feature may not be universally applicable; one is encouraged to modify the source code as needed.
