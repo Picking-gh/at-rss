@@ -8,6 +8,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"regexp"
@@ -130,7 +131,7 @@ func parseAria2cConfig(t *Task, v interface{}) {
 		t.Server.Url = defaultAria2cRpcUrl
 	} else {
 		t.Server.Url = getStringOrDefault(server["url"], defaultAria2cRpcUrl)
-		t.Server.Token, _ = server["token"].(string)
+		t.Server.Token = convertToString(server["token"])
 	}
 	t.Server.RpcType = "aria2c"
 }
@@ -144,16 +145,16 @@ func parseTransmissionConfig(t *Task, v interface{}) {
 	} else {
 		t.Server.Host = getStringOrDefault(server["host"], defaultTransmissionRpcHost)
 		t.Server.Port = uint16(getIntOrDefault(server["port"], defaultTransmissionRpcPort))
-		t.Server.User, _ = server["username"].(string)
-		t.Server.Pswd, _ = server["password"].(string)
+		t.Server.User = convertToString(server["username"])
+		t.Server.Pswd = convertToString(server["password"])
 	}
 	t.Server.RpcType = "transmission"
 }
 
 // parseFilterConfig processes the filter configuration.
 func parseFilterConfig(t *Task, v interface{}, cc *gocc.OpenCC) {
-	if tryFilter, ok := v.(map[string]interface{}); ok {
-		filter := convertToStringSliceMap(tryFilter)
+	if rawMap, ok := v.(map[string]interface{}); ok {
+		filter := convertToStringSliceMap(rawMap)
 		t.pc.Include = normalizeAndSimplifyTexts(cc, filter["include"])
 		t.pc.Exclude = normalizeAndSimplifyTexts(cc, filter["exclude"])
 	}
@@ -211,6 +212,18 @@ func normalizeAndSimplifyTexts(cc *gocc.OpenCC, texts []string) []string {
 	return simplified
 }
 
+// convertToString converts a interface{} to string as much as possible.
+func convertToString(m interface{}) string {
+	switch v := m.(type) {
+	case string:
+		return v
+	case int, int64, float64, bool:
+		return fmt.Sprintf("%v", v)
+	default:
+		return ""
+	}
+}
+
 // convertToStringSliceMap converts a map with interface{} values into a map with string slices.
 func convertToStringSliceMap(rawMap map[string]interface{}) map[string][]string {
 	result := make(map[string][]string)
@@ -219,7 +232,7 @@ func convertToStringSliceMap(rawMap map[string]interface{}) map[string][]string 
 			strSlice := make([]string, len(slice))
 			i := 0
 			for _, item := range slice {
-				if str, ok := item.(string); ok {
+				if str := convertToString(item); len(str) > 0 {
 					strSlice[i] = str
 					i++
 				}
@@ -233,8 +246,8 @@ func convertToStringSliceMap(rawMap map[string]interface{}) map[string][]string 
 }
 
 // getStringOrDefault tries to get a string from a interface or returns a default value.
-func getStringOrDefault(m interface{}, defaultValue string) string {
-	value, ok := m.(string)
+func getStringOrDefault(v interface{}, defaultValue string) string {
+	value, ok := v.(string)
 	if !ok || value == "" {
 		return defaultValue
 	}
@@ -242,8 +255,8 @@ func getStringOrDefault(m interface{}, defaultValue string) string {
 }
 
 // getIntOrDefault tries to get an integer from a interface or returns a default value.
-func getIntOrDefault(m interface{}, defaultValue int) int {
-	if value, ok := m.(int); ok && value > 0 {
+func getIntOrDefault(v interface{}, defaultValue int) int {
+	if value, ok := v.(int); ok && value > 0 {
 		return value
 	}
 	return defaultValue
