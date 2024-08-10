@@ -8,14 +8,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
-	"sync"
 	"time"
 )
 
 type Task struct {
 	Server struct {
-		RpcType string //"aria2c" or "transmission"
+		RpcType string // "aria2c" or "transmission"
 		Url     string // for aria2c
 		Token   string // for aria2c
 		Host    string // for transmission rpc
@@ -23,25 +23,25 @@ type Task struct {
 		User    string // for transmission rpc
 		Pswd    string // for transmission rpc
 	}
-	FetchInterval int64
+	FetchInterval time.Duration // Changed to time.Duration for better time handling
 	pc            *ParserConfig
 	ctx           context.Context
 }
 
-// RpcClient is the interface for both aria2c and transmission rpc client.
+// RpcClient is the interface for both aria2c and transmission rpc clients.
 type RpcClient interface {
 	AddTorrent(uri string) error
 	CleanUp()
 	Close()
 }
 
-// Start begins executing the task at regular intervals
-func (t *Task) Start(ctx context.Context, wg *sync.WaitGroup, cache *Cache) {
-	defer wg.Done()
-	ticker := time.NewTicker(time.Duration(t.FetchInterval) * time.Minute)
+// Start begins executing the task at regular intervals.
+func (t *Task) Start(ctx context.Context, cache *Cache) {
+	ticker := time.NewTicker(t.FetchInterval)
 	defer ticker.Stop()
 	t.ctx = ctx
 
+	// Fetch torrents initially and then repeatedly at intervals
 	t.FetchTorrents(cache)
 	for {
 		select {
@@ -53,24 +53,12 @@ func (t *Task) Start(ctx context.Context, wg *sync.WaitGroup, cache *Cache) {
 	}
 }
 
-// FetchTorrents gets torrents via rpc client of proper RpcType
+// FetchTorrents retrieves torrents via the appropriate RPC client.
 func (t *Task) FetchTorrents(cache *Cache) {
-	var client RpcClient
-	var err error
-
-	switch t.Server.RpcType {
-	case "aria2c":
-		client, err = NewAria2c(t.ctx, t.Server.Url, t.Server.Token)
-		if err != nil {
-			slog.Warn("Failed to connect to aria2c rpc.", "err", err)
-			return
-		}
-	case "transmission":
-		client, err = NewTransmission(t.ctx, t.Server.Host, t.Server.Port, t.Server.User, t.Server.Pswd)
-		if err != nil {
-			slog.Warn("Failed to connect to transmission rpc.", "err", err)
-			return
-		}
+	client, err := t.createClient()
+	if err != nil {
+		slog.Warn("Failed to create RPC client", "rpcType", t.Server.RpcType, "err", err)
+		return
 	}
 	defer func() {
 		client.CleanUp()
@@ -84,9 +72,25 @@ func (t *Task) FetchTorrents(cache *Cache) {
 
 	urls := parser.GetNewTorrentURL()
 	for _, url := range urls {
-		err := client.AddTorrent(url)
-		if err != nil {
-			slog.Warn("Failed to add ["+url+"].", "err", err)
+		if err := client.AddTorrent(url); err != nil {
+			slog.Warn("Failed to add torrent", "url", url, "err", err)
 		}
 	}
+}
+
+// createClient initializes the appropriate RPC client based on RpcType.
+func (t *Task) createClient() (RpcClient, error) {
+	var client RpcClient
+	var err error
+
+	switch t.Server.RpcType {
+	case "aria2c":
+		client, err = NewAria2c(t.ctx, t.Server.Url, t.Server.Token)
+	case "transmission":
+		client, err = NewTransmission(t.ctx, t.Server.Host, t.Server.Port, t.Server.User, t.Server.Pswd)
+	default:
+		err = errors.New("unknown rpcType: " + t.Server.RpcType)
+	}
+
+	return client, err
 }

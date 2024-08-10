@@ -11,71 +11,73 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
-
-	"github.com/atrox/homedir"
 )
 
-const cachePath = "~/.cache/at-rss.gob"
+const cachePath = ".cache/at-rss.gob"
 
-// Cache logs the head for each feed.
+// Cache stores the head item GUID for each feed URL.
 type Cache struct {
-	path string // cache file path
 	mu   sync.RWMutex
-	data map[string]string //key:feed url, value: head item guid
+	data map[string]string
+	path string
 }
 
-// NewCache return a new Cache object
+// NewCache creates a new Cache object.
 func NewCache() (*Cache, error) {
-	cache := Cache{}
+	cache := &Cache{
+		data: make(map[string]string),
+	}
 
-	path, err := homedir.Expand(cachePath)
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		slog.Error("Failed to locate cache file path.", "err", err)
+		slog.Error("Failed to locate user's home directory.", "err", err)
 		return nil, err
 	}
-	cache.path = path
+	cache.path = filepath.Join(homeDir, cachePath)
 
-	err = readGob(cache.path, &cache.data)
-	if err != nil {
-		slog.Info("Empty cache")
-		cache.data = make(map[string]string)
+	if err := readGob(cache.path, &cache.data); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("Failed to read cache, initializing empty cache.", "err", err)
 	}
-	return &cache, nil
+
+	return cache, nil
 }
 
-// Get return the value associated with the key or an error if the
-// cache doesn't contains the key
+// Get retrieves the value associated with the key or returns an error if the key doesn't exist.
 func (c *Cache) Get(key string) (string, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	v, ok := c.data[key]
-	if !ok {
-		return "", errors.New("no match found for key " + key)
+
+	if value, ok := c.data[key]; ok {
+		return value, nil
 	}
-	return v, nil
+	return "", errors.New("no match found for key " + key)
 }
 
-// Set set in the cache the given value with the given key
-func (c *Cache) Set(key string, value string) error {
+// Set stores the given value with the associated key in the cache and persists it.
+func (c *Cache) Set(key, value string) error {
 	c.mu.Lock()
-	c.data[key] = value
+	defer c.mu.Unlock()
 
+	c.data[key] = value
 	return writeGob(c.path, c.data)
 }
 
 func writeGob(filePath string, object interface{}) error {
-	os.Mkdir(path.Dir(filePath), 0744)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0744); err != nil {
+		slog.Warn("Failed to create directory for cache file.", "err", err)
+		return err
+	}
+
 	file, err := os.Create(filePath)
 	if err != nil {
 		slog.Warn("Failed to write cache to disk. May download duplicate files.", "err", err)
 		return err
 	}
-	encoder := gob.NewEncoder(file)
-	err = encoder.Encode(object)
-	file.Close()
-	return err
+	defer file.Close()
+
+	return gob.NewEncoder(file).Encode(object)
 }
 
 func readGob(filePath string, object interface{}) error {
@@ -83,8 +85,7 @@ func readGob(filePath string, object interface{}) error {
 	if err != nil {
 		return err
 	}
-	decoder := gob.NewDecoder(file)
-	err = decoder.Decode(object)
-	file.Close()
-	return err
+	defer file.Close()
+
+	return gob.NewDecoder(file).Decode(object)
 }

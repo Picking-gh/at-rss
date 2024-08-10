@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -22,18 +23,15 @@ type options struct {
 }
 
 var opt options
-
 var parser = flags.NewParser(&opt, flags.Default)
 
 func main() {
+	// Parse command line arguments
 	if _, err := parser.Parse(); err != nil {
-		if flagsErr, ok := err.(*flags.Error); ok && flagsErr.Type == flags.ErrHelp {
-			os.Exit(0)
-		} else {
-			os.Exit(1)
-		}
+		handleFlagsError(err)
 	}
 
+	// Load configuration and initialize cache
 	tasks, err := LoadConfig(opt.Config)
 	if err != nil {
 		os.Exit(1)
@@ -43,17 +41,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create context and wait group for goroutines
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Start tasks in separate goroutines
 	for _, task := range *tasks {
 		wg.Add(1)
-		go task.Start(ctx, &wg, cache)
-		time.Sleep(time.Second * 5)
+		go func(task *Task) {
+			defer wg.Done()
+			task.Start(ctx, cache)
+		}(task)
+		time.Sleep(5 * time.Second)
 	}
 
-	// Accept SIGINT or SIGTERM to gracefully shutdown the above periodic job
+	// Handle termination signals
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
@@ -61,4 +64,14 @@ func main() {
 
 	// Wait for all tasks to finish
 	wg.Wait()
+}
+
+// handleFlagsError processes errors from flag parsing
+func handleFlagsError(err error) {
+	if flagsErr, ok := err.(*flags.Error); ok && flagsErr.Type == flags.ErrHelp {
+		os.Exit(0)
+	} else {
+		slog.Error("Flag parsing error", "error", err)
+		os.Exit(1)
+	}
 }
