@@ -1,13 +1,13 @@
-# at-rss: A Modified RSS Feed Parser for aria2c and transmission
+# at-rss: A RSS Feed Parser for aria2c and transmission
 
 The origin of this project is that I couldn't compile FlexGet for my old ARMv7 development board, so I decided to create a simple replacement myself.
 
-This modified version, referred to as **at-rss** (encompassing both **aria2c-rss** and **transmission-rss**), is rebuilted from [transmission-rss](https://github.com/trishika/transmission-rss). It allows users to extract torrents filtered by specific keywords from subscribed RSS feeds and initiate downloads using the RPC of either aria2c or transmission. Special thanks to trishika/transmission-rss for providing the foundational framework.
+This project, named **at-rss** (covering both **aria2c-rss** and **transmission-rss**), is rebuilt from [transmission-rss](https://github.com/trishika/transmission-rss). It enables users to filter torrents from subscribed RSS feeds using specific keywords and initiate downloads via the RPC server of either aria2c or transmission. Special thanks to trishika for the initial version.
 
 ## Key Features
 
 - **Magnet Link Extraction:**  
-  When an `extracter` is specified in the `at-rss.conf` file, the script can extract a hash from a specified element (e.g., `title`, `link`, `description`, `enclosure`, or `guid`) using a user-defined regular expression pattern. This hash is then used to reconstruct a magnet link, replacing the link in the `enclosure` elements.
+  When an `extracter` is specified in the `at-rss.conf` file, the script extracts a hash from a designated element (e.g., `title`, `link`, `description`, `enclosure`, or `guid`) using a user-defined regular expression pattern (this script use `bith`, the pattern is `"([a-f0-9]{40})"`). This hash is then used to reconstruct a magnet link, replacing the original link in the `enclosure` element.
 
 - **Support for aria2c and transmission:**  
   The script supports both aria2c and Transmission, allowing users to choose their preferred torrent client—one for downloading BT and the other for PT. You can simply specify either `aria2c` or `transmission` to go, as many users start them with the default configuration.
