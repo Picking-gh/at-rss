@@ -47,6 +47,9 @@ func main() {
 	defer cancel()
 
 	// Start tasks in separate goroutines
+	if len(*tasks) == 0 {
+		slog.Warn("No task is runing.")
+	}
 	for _, task := range *tasks {
 		wg.Add(1)
 		go func(task *Task) {
