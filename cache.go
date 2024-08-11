@@ -20,14 +20,14 @@ const cachePath = ".cache/at-rss.gob"
 // Cache stores the head item GUID for each feed URL.
 type Cache struct {
 	mu   sync.RWMutex
-	data map[string]string
+	data map[string]map[string]struct{}
 	path string
 }
 
 // NewCache creates a new Cache object.
 func NewCache() (*Cache, error) {
 	cache := &Cache{
-		data: make(map[string]string),
+		data: make(map[string]map[string]struct{}),
 	}
 
 	homeDir, err := os.UserHomeDir()
@@ -45,22 +45,26 @@ func NewCache() (*Cache, error) {
 }
 
 // Get retrieves the value associated with the key or returns an error if the key doesn't exist.
-func (c *Cache) Get(key string) (string, error) {
+func (c *Cache) Get(key string) (map[string]struct{}, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	if value, ok := c.data[key]; ok {
 		return value, nil
 	}
-	return "", errors.New("no match found for key " + key)
+	return nil, errors.New("no match found for key " + key)
 }
 
 // Set stores the given value with the associated key in the cache and persists it.
-func (c *Cache) Set(key, value string) error {
+func (c *Cache) Set(key string, value map[string]struct{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.data[key] = value
+	data := c.data[key]
+	for guid, _ := range value {
+		data[guid] = struct{}{}
+	}
+
 	return writeGob(c.path, c.data)
 }
 

@@ -17,11 +17,10 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
-// Feed manages RSS feed parsing configurations, parsed content, and cache.
+// Feed manages RSS feed parsing configurations, parsed content.
 type Feed struct {
 	*ParserConfig
 	contents *gofeed.Feed
-	cache    *Cache
 }
 
 // ParserConfig holds the parameters read from the configuration file.
@@ -59,7 +58,7 @@ func getTagValue(item *gofeed.Item, tagName string) []string {
 }
 
 // NewFeedParser creates a new Feed object.
-func NewFeedParser(ctx context.Context, pc *ParserConfig, cache *Cache) *Feed {
+func NewFeedParser(ctx context.Context, pc *ParserConfig) *Feed {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -69,34 +68,48 @@ func NewFeedParser(ctx context.Context, pc *ParserConfig, cache *Cache) *Feed {
 		slog.Warn("Failed to fetch feed URL", "url", pc.FeedUrl, "error", err)
 		return nil
 	}
-	return &Feed{pc, contents, cache}
+	return &Feed{pc, contents}
 }
 
 // GetNewItems returns all new items in the RSS feed.
-func (f *Feed) GetNewItems() []*gofeed.Item {
-	guid, err := f.cache.Get(f.FeedUrl)
+func (f *Feed) GetNewItems(cache *Cache) []*gofeed.Item {
+	// Attempt to get GUIDs from cache
+	guid, err := cache.Get(f.FeedUrl)
 	if err != nil {
 		return f.contents.Items
 	}
-	for i, item := range f.contents.Items {
-		if item.GUID == guid {
-			return f.contents.Items[:i]
+
+	// Preallocate slice based on the number of items
+	newItems := make([]*gofeed.Item, 0, len(f.contents.Items))
+
+	// Find new items
+	for _, item := range f.contents.Items {
+		if _, found := guid[item.GUID]; !found {
+			newItems = append(newItems, item)
 		}
 	}
-	return f.contents.Items
+
+	f.RemoveExpiredItems(cache)
+
+	return newItems
+}
+
+// Pair stores torrent url and its index in []*gofeed.Item
+type Pair struct {
+	url   string
+	index int
 }
 
 // GetNewTorrentURL returns the URLs of all new items in the RSS feed.
-func (f *Feed) GetNewTorrentURL() []string {
-	var urls []string
-	items := f.GetNewItems()
+func (f *Feed) GetNewTorrentURL(items []*gofeed.Item) []Pair {
+	urls := make([]Pair, 0, len(items))
 	if len(items) == 0 {
 		return urls
 	}
 
 	cc, _ := gocc.New("t2s") // Convert Traditional Chinese to Simplified Chinese
 	hasExpectedItem := false
-	for _, item := range items {
+	for i, item := range items {
 		var title string
 		var err error
 		if cc != nil {
@@ -126,18 +139,15 @@ func (f *Feed) GetNewTorrentURL() []string {
 					slog.Warn("Pattern did not match any hash", "pattern", f.Pattern)
 					continue
 				}
-				urls = append(urls, "magnet:?xt=urn:btih:"+matchStrings[1])
+				urls = append(urls, Pair{url: "magnet:?xt=urn:btih:" + matchStrings[1], index: i})
 			}
 		} else {
 			for _, enclosure := range item.Enclosures {
 				if enclosure.Type == "application/x-bittorrent" {
-					urls = append(urls, enclosure.URL)
+					urls = append(urls, Pair{url: enclosure.URL, index: i})
 				}
 			}
 		}
-	}
-	if len(items) > 0 {
-		f.cache.Set(f.FeedUrl, items[0].GUID)
 	}
 	return urls
 }
@@ -168,4 +178,23 @@ func (f *Feed) shouldSkipItem(title string) bool {
 		}
 	}
 	return true
+}
+
+// RemoveExpiredItems removes items from the cache that are not present in the feed
+func (f *Feed) RemoveExpiredItems(cache *Cache) {
+	// Create a set of feed GUIDs
+	feedGuids := make(map[string]struct{}, len(f.contents.Items))
+	for _, item := range f.contents.Items {
+		feedGuids[item.GUID] = struct{}{}
+	}
+
+	// Access the cache for the specific feed URL
+	cacheItems := cache.data[f.FeedUrl]
+
+	// Remove cache items that are not in feedGuids
+	for guid := range cacheItems {
+		if _, found := feedGuids[guid]; !found {
+			delete(cacheItems, guid)
+		}
+	}
 }

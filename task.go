@@ -65,16 +65,22 @@ func (t *Task) FetchTorrents(cache *Cache) {
 		client.Close()
 	}()
 
-	parser := NewFeedParser(t.ctx, t.pc, cache)
+	parser := NewFeedParser(t.ctx, t.pc)
 	if parser == nil {
 		return
 	}
-
-	urls := parser.GetNewTorrentURL()
-	for _, url := range urls {
-		if err := client.AddTorrent(url); err != nil {
-			slog.Warn("Failed to add torrent", "url", url, "err", err)
+	items := parser.GetNewItems(cache)
+	urls := parser.GetNewTorrentURL(items)
+	addedItems := make(map[string]struct{})
+	for _, t := range urls {
+		if err := client.AddTorrent(t.url); err != nil {
+			slog.Warn("Failed to add torrent", "url", t.url, "err", err)
+		} else {
+			addedItems[items[t.index].GUID] = struct{}{}
 		}
+	}
+	if len(items) > 0 {
+		cache.Set(parser.FeedUrl, addedItems)
 	}
 }
 
