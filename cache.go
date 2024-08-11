@@ -60,6 +60,9 @@ func (c *Cache) Set(key string, value map[string]struct{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if _, exists := c.data[key]; !exists {
+		c.data[key] = make(map[string]struct{})
+	}
 	data := c.data[key]
 	for guid := range value {
 		data[guid] = struct{}{}
