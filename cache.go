@@ -61,7 +61,7 @@ func (c *Cache) Set(key string, value map[string]struct{}) error {
 	defer c.mu.Unlock()
 
 	data := c.data[key]
-	for guid, _ := range value {
+	for guid := range value {
 		data[guid] = struct{}{}
 	}
 
