@@ -16,8 +16,8 @@ import (
 type Task struct {
 	Server struct {
 		RpcType string // "aria2c" or "transmission"
-		Url     string // for aria2c
-		Token   string // for aria2c
+		Url     string // for aria2c rpc
+		Token   string // for aria2c rpc
 		Host    string // for transmission rpc
 		Port    uint16 // for transmission rpc
 		User    string // for transmission rpc
@@ -32,7 +32,7 @@ type Task struct {
 type RpcClient interface {
 	AddTorrent(uri string) error
 	CleanUp()
-	Close()
+	CloseRpc()
 }
 
 // Start begins executing the task at regular intervals.
@@ -42,19 +42,19 @@ func (t *Task) Start(ctx context.Context, cache *Cache) {
 	t.ctx = ctx
 
 	// Fetch torrents initially and then repeatedly at intervals
-	t.FetchTorrents(cache)
+	t.fetchTorrents(cache)
 	for {
 		select {
 		case <-ticker.C:
-			t.FetchTorrents(cache)
+			t.fetchTorrents(cache)
 		case <-t.ctx.Done():
 			return
 		}
 	}
 }
 
-// FetchTorrents retrieves torrents via the appropriate RPC client.
-func (t *Task) FetchTorrents(cache *Cache) {
+// fetchTorrents retrieves torrents via the appropriate RPC client.
+func (t *Task) fetchTorrents(cache *Cache) {
 	client, err := t.createClient()
 	if err != nil {
 		slog.Warn("Failed to create RPC client", "rpcType", t.Server.RpcType, "err", err)
@@ -62,7 +62,7 @@ func (t *Task) FetchTorrents(cache *Cache) {
 	}
 	defer func() {
 		client.CleanUp()
-		client.Close()
+		client.CloseRpc()
 	}()
 
 	parser := NewFeedParser(t.ctx, t.pc)
