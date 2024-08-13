@@ -182,11 +182,7 @@ func (f *Feed) shouldSkipItem(title string) bool {
 
 // RemoveExpiredItems removes items from the cache that are not present in the feed
 func (f *Feed) RemoveExpiredItems(cache *Cache) {
-	// Create a set of feed GUIDs
-	feedGuids := make(map[string]struct{}, len(f.contents.Items))
-	for _, item := range f.contents.Items {
-		feedGuids[item.GUID] = struct{}{}
-	}
+	feedGuids := f.GetGUIDSet()
 
 	// Access the cache for the specific feed URL
 	cacheItems := cache.data[f.FeedUrl]
@@ -197,4 +193,13 @@ func (f *Feed) RemoveExpiredItems(cache *Cache) {
 			delete(cacheItems, guid)
 		}
 	}
+}
+
+// getItemGuidSet creates a set of feed GUIDs
+func (f *Feed) GetGUIDSet() map[string]struct{} {
+	feedGuids := make(map[string]struct{}, len(f.contents.Items))
+	for _, item := range f.contents.Items {
+		feedGuids[item.GUID] = struct{}{}
+	}
+	return feedGuids
 }

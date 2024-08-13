@@ -71,17 +71,14 @@ func (t *Task) FetchTorrents(cache *Cache) {
 	}
 	items := parser.GetNewItems(cache)
 	urls := parser.GetNewTorrentURL(items)
-	addedItems := make(map[string]struct{})
+	addedItems := parser.GetGUIDSet()
 	for _, t := range urls {
 		if err := client.AddTorrent(t.url); err != nil {
 			slog.Warn("Failed to add torrent", "url", t.url, "err", err)
-		} else {
-			addedItems[items[t.index].GUID] = struct{}{}
+			delete(addedItems, items[t.index].GUID)
 		}
 	}
-	if len(items) > 0 {
-		cache.Set(parser.FeedUrl, addedItems)
-	}
+	cache.Set(parser.FeedUrl, addedItems)
 }
 
 // createClient initializes the appropriate RPC client based on RpcType.

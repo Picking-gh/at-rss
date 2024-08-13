@@ -17,7 +17,11 @@ import (
 
 const cachePath = ".cache/at-rss.gob"
 
-// Cache stores the head item GUID for each feed URL.
+// Cache is a struct that holds information related to RSS feed items.
+// The `data` field is a map where each key is a feed URL (string), and the value
+// is another map that stores the GUIDs (Globally Unique Identifiers) of all the
+// items in that particular feed. The `path` field is a string that specifies the
+// file path where the cache data may be stored or retrieved from.
 type Cache struct {
 	mu   sync.RWMutex
 	data map[string]map[string]struct{}
@@ -57,6 +61,9 @@ func (c *Cache) Get(key string) (map[string]struct{}, error) {
 
 // Set stores the given value with the associated key in the cache and persists it.
 func (c *Cache) Set(key string, value map[string]struct{}) error {
+	if len(value) == 0 {
+		return nil
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
