@@ -154,29 +154,26 @@ func (f *Feed) GetNewTorrentURL(items []*gofeed.Item) []Pair {
 
 // shouldSkipItem checks if an item should be skipped based on include and exclude filters.
 func (f *Feed) shouldSkipItem(title string) bool {
-	for _, excludeKeyword := range f.Exclude {
-		if strings.Contains(title, excludeKeyword) {
+	// Check if all exclude keywords are present; if so, skip the item
+	for _, excludeKeywords := range f.Exclude {
+		if allKeywordsMatch(title, excludeKeywords) {
 			return true
 		}
 	}
 
+	// If there are no include keywords, do not skip the item
 	if len(f.Include) == 0 {
 		return false
 	}
 
+	// Check if all include keywords are present; if so, do not skip the item
 	for _, includeKeywords := range f.Include {
-		keywords := strings.Split(includeKeywords, ",")
-		allMatch := true
-		for _, keyword := range keywords {
-			if !strings.Contains(title, strings.TrimSpace(keyword)) {
-				allMatch = false
-				break
-			}
-		}
-		if allMatch {
+		if allKeywordsMatch(title, includeKeywords) {
 			return false
 		}
 	}
+
+	// If none of the include keywords match, skip the item
 	return true
 }
 
@@ -202,4 +199,15 @@ func (f *Feed) GetGUIDSet() map[string]struct{} {
 		feedGuids[item.GUID] = struct{}{}
 	}
 	return feedGuids
+}
+
+// allKeywordsMatch checks if all keywords in a comma-separated list are present in the title.
+func allKeywordsMatch(title, keywords string) bool {
+	keywordList := strings.Split(keywords, ",")
+	for _, keyword := range keywordList {
+		if !strings.Contains(title, strings.TrimSpace(keyword)) {
+			return false
+		}
+	}
+	return true
 }
