@@ -7,7 +7,7 @@ This project, named **at-rss** (covering both **aria2c-rss** and **transmission-
 ## Key Features
 
 - **Magnet Link Extraction:**  
-  When an `extracter` is specified in the `at-rss.conf` file, the script extracts a hash from a designated element (e.g., `title`, `link`, `description`, `enclosure`, or `guid`) using a user-defined regular expression pattern. This hash is then used to reconstruct a magnet link, replacing the original link in the `enclosure` element. This script uses `bith`, the pattern is usually `"([a-f0-9]{40})"`.
+  When an `extracter` is specified in the `at-rss.conf` file, the script extracts a hash from a designated element (e.g., `title`, `link`, `description`, `enclosure`, or `guid`) using a user-defined regular expression pattern. This hash is then used to reconstruct a magnet link, replacing the original link in the `enclosure` element. This script uses `bith`, the pattern is usually `"(?:[2-7A-Z]{32}|[0-9a-f]{40})"`.
 
 - **Support for aria2c and transmission:**  
   This script supports both aria2c and Transmission, giving users the flexibility to choose their preferred torrent client—whether it's for downloading BT or PT, for example. This is done by specifying `aria2c` or `transmission` for each feed. This is probably not the best way, but it works. 
