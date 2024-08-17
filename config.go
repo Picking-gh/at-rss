@@ -105,10 +105,10 @@ func parseTask(task map[string]interface{}, cc *gocc.OpenCC) (*Task, error) {
 		case "transmission":
 			parseTransmissionConfig(t, v)
 		case "feed":
-			if url, urlOk := v.(string); !urlOk {
-				return nil, errors.New("feed URL missing")
+			if urls := parseFeedsConfig(v); urls == nil {
+				return nil, errors.New("feed URL missing or contains non url")
 			} else {
-				t.pc.FeedUrl = url
+				t.FeedUrls = urls
 			}
 		case "interval":
 			t.FetchInterval = time.Duration(getIntOrDefault(v, defaultFetchInterval)) * time.Minute
@@ -149,6 +149,25 @@ func parseTransmissionConfig(t *Task, v interface{}) {
 		t.Server.Pswd = convertToString(server["password"])
 	}
 	t.Server.RpcType = "transmission"
+}
+
+// parseFeedConfig processes the feed configuration.
+func parseFeedsConfig(v interface{}) []string {
+	var urls []string
+	switch v := v.(type) {
+	case []interface{}:
+		urls = make([]string, len(v))
+		for i, item := range v {
+			if url, ok := item.(string); ok {
+				urls[i] = url
+			} else {
+				return nil
+			}
+		}
+	case string:
+		urls = []string{v}
+	}
+	return urls
 }
 
 // parseFilterConfig processes the filter configuration.

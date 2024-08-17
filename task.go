@@ -24,6 +24,7 @@ type Task struct {
 		Pswd    string // for transmission rpc
 	}
 	FetchInterval time.Duration // Changed to time.Duration for better time handling
+	FeedUrls      []string
 	pc            *ParserConfig
 	ctx           context.Context
 }
@@ -65,20 +66,30 @@ func (t *Task) fetchTorrents(cache *Cache) {
 		client.CloseRpc()
 	}()
 
-	parser := NewFeedParser(t.ctx, t.pc)
-	if parser == nil {
-		return
-	}
-	items := parser.GetNewItems(cache)
-	urls := parser.GetNewTorrentURL(items)
-	addedItems := parser.GetGUIDSet()
-	for _, t := range urls {
-		if err := client.AddTorrent(t.url); err != nil {
-			slog.Warn("Failed to add torrent", "url", t.url, "err", err)
-			delete(addedItems, items[t.index].GUID)
+	// hashSet keeps the hashes of a magnet link that is added
+	infoHashSet := make(map[string]struct{})
+	for _, url := range t.FeedUrls {
+		parser := NewFeedParser(t.ctx, url, t.pc)
+		if parser == nil {
+			return
 		}
+		items := parser.GetNewItems(cache)
+		torrents := parser.GetNewTorrents(items, infoHashSet)
+		addedItems := parser.GetGUIDSet()
+		for _, t := range torrents {
+			if err := client.AddTorrent(t.URL); err != nil {
+				slog.Warn("Failed to add torrent", "URL", t.URL, "err", err)
+				delete(addedItems, items[t.Index].GUID)
+			} else {
+				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
+				// Store added megnet links
+				for _, infoHash := range t.InfoHashes {
+					infoHashSet[infoHash] = struct{}{}
+				}
+			}
+		}
+		cache.Set(url, addedItems)
 	}
-	cache.Set(parser.FeedUrl, addedItems)
 }
 
 // createClient initializes the appropriate RPC client based on RpcType.
