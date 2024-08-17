@@ -11,6 +11,7 @@ import (
 	"encoding/base32"
 	"encoding/hex"
 	"errors"
+	"html"
 	"log/slog"
 	"net/url"
 	"regexp"
@@ -75,7 +76,7 @@ func (f *Feed) GetNewItems(cache *Cache) []*gofeed.Item {
 
 	// Find new items
 	for _, item := range f.Contents.Items {
-		if _, found := guid[item.GUID]; !found {
+		if _, found := guid[html.UnescapeString(item.GUID)]; !found {
 			newItems = append(newItems, item)
 		}
 	}
@@ -87,7 +88,7 @@ func (f *Feed) GetNewItems(cache *Cache) []*gofeed.Item {
 
 // GetNewTorrents returns the URLs of all new items in the RSS feed.
 // The infoHashSet logs infoHash of all added magnet links to avoid adding the same link multiple times.
-func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]struct{}) []TorrentInfo {
+func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]int64) []TorrentInfo {
 	urls := make([]TorrentInfo, 0, len(items))
 	if len(items) == 0 {
 		return urls
@@ -98,14 +99,15 @@ func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]struc
 	for i, item := range items {
 		var title string
 		var err error
+		rawTitle := html.UnescapeString(item.Title)
 		if cc != nil {
-			title, err = cc.Convert(item.Title)
+			title, err = cc.Convert(rawTitle)
 			if err != nil {
-				slog.Warn("Failed to convert title to simplified Chinese.", "title", item.Title, "error", err)
-				title = item.Title
+				slog.Warn("Failed to convert title to simplified Chinese.", "title", rawTitle, "error", err)
+				title = rawTitle
 			}
 		} else {
-			title = item.Title
+			title = rawTitle
 		}
 
 		if f.shouldSkipItem(strings.ToLower(title)) {
@@ -116,7 +118,7 @@ func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]struc
 			slog.Info("Fetching torrents from feed.", "url", f.URL)
 		}
 
-		slog.Info("Got item", "title", item.Title)
+		slog.Info("Got item", "title", rawTitle)
 
 		if f.Trick {
 			for _, url := range getTagValue(item, f.Tag) {
@@ -144,13 +146,14 @@ func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]struc
 				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
 				// If it's not a magnet link (including cases where it's a magnet link but malformed), let the BT client decide what to do.
 				// Do not attempt to obtain the infoHash from the torrent at this time (todo).
-				if infoHashes, err := parseMagnetUri(enclosure.URL); err != nil {
-					urls = append(urls, TorrentInfo{URL: enclosure.URL, Index: i, InfoHashes: nil})
+				enclosureUrl := html.UnescapeString(enclosure.URL)
+				if infoHashes, err := parseMagnetUri(enclosureUrl); err != nil {
+					urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: nil})
 				} else {
 					for _, infoHash := range infoHashes {
 						// As long as there is at least one infoHash that hasn't been downloaded, add it to the download link list.
 						if _, exist := infoHashSet[infoHash]; !exist {
-							urls = append(urls, TorrentInfo{URL: enclosure.URL, Index: i, InfoHashes: infoHashes})
+							urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: infoHashes})
 							break
 						}
 					}
@@ -188,24 +191,14 @@ func (f *Feed) shouldSkipItem(title string) bool {
 
 // RemoveExpiredItems removes items from the cache that are not present in the feed
 func (f *Feed) RemoveExpiredItems(cache *Cache) {
-	feedGuids := f.GetGUIDSet()
-
-	// Access the cache for the specific feed URL
-	cacheItems := cache.data[f.URL]
-
-	// Remove cache items that are not in feedGuids
-	for guid := range cacheItems {
-		if _, found := feedGuids[guid]; !found {
-			delete(cacheItems, guid)
-		}
-	}
+	cache.RemoveNotIn(f.URL, f.GetGUIDSet())
 }
 
 // getItemGuidSet creates a set of feed GUIDs
-func (f *Feed) GetGUIDSet() map[string]struct{} {
-	feedGuids := make(map[string]struct{}, len(f.Contents.Items))
+func (f *Feed) GetGUIDSet() map[string]int64 {
+	feedGuids := make(map[string]int64, len(f.Contents.Items))
 	for _, item := range f.Contents.Items {
-		feedGuids[item.GUID] = struct{}{}
+		feedGuids[html.UnescapeString(item.GUID)] = 0
 	}
 	return feedGuids
 }
@@ -215,19 +208,19 @@ func (f *Feed) GetGUIDSet() map[string]struct{} {
 func getTagValue(item *gofeed.Item, tagName string) []string {
 	switch tagName {
 	case "title":
-		return []string{item.Title}
+		return []string{html.UnescapeString(item.Title)}
 	case "link":
-		return []string{item.Link}
+		return []string{html.UnescapeString(item.Link)}
 	case "description":
-		return []string{item.Description}
+		return []string{html.UnescapeString(item.Description)}
 	case "enclosure":
 		result := make([]string, len(item.Enclosures))
 		for i, enclosure := range item.Enclosures {
-			result[i] = enclosure.URL
+			result[i] = html.UnescapeString(enclosure.URL)
 		}
 		return result
 	case "guid":
-		return []string{item.GUID}
+		return []string{html.UnescapeString(item.GUID)}
 	default:
 		return nil
 	}

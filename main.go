@@ -36,15 +36,17 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	cache, err := NewCache()
-	if err != nil {
-		os.Exit(1)
-	}
 
 	// Create context and wait group for goroutines
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	cache, err := NewCache(ctx)
+	if err != nil {
+		os.Exit(1)
+	}
+	defer cache.Flush()
 
 	// Start tasks in separate goroutines
 	if len(*tasks) == 0 {

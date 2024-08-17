@@ -67,14 +67,14 @@ func (t *Task) fetchTorrents(cache *Cache) {
 	}()
 
 	// hashSet keeps the hashes of a magnet link that is added
-	infoHashSet := make(map[string]struct{})
+	infoHashes, _ := cache.Get("infoHash")
 	for _, url := range t.FeedUrls {
 		parser := NewFeedParser(t.ctx, url, t.pc)
 		if parser == nil {
-			return
+			continue
 		}
 		items := parser.GetNewItems(cache)
-		torrents := parser.GetNewTorrents(items, infoHashSet)
+		torrents := parser.GetNewTorrents(items, infoHashes)
 		addedItems := parser.GetGUIDSet()
 		for _, t := range torrents {
 			if err := client.AddTorrent(t.URL); err != nil {
@@ -84,12 +84,14 @@ func (t *Task) fetchTorrents(cache *Cache) {
 				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
 				// Store added megnet links
 				for _, infoHash := range t.InfoHashes {
-					infoHashSet[infoHash] = struct{}{}
+					infoHashes[infoHash] = time.Now().Unix()
 				}
 			}
 		}
 		cache.Set(url, addedItems)
 	}
+	cache.Set("infoHash", infoHashes)
+	cache.Flush()
 }
 
 // createClient initializes the appropriate RPC client based on RpcType.
