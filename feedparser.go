@@ -13,11 +13,13 @@ import (
 	"errors"
 	"html"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/anacrolix/torrent/metainfo"
 	"github.com/liuzl/gocc"
 	"github.com/mmcdole/gofeed"
 )
@@ -29,6 +31,7 @@ type Feed struct {
 	*ParserConfig
 	Contents *gofeed.Feed
 	URL      string // feed URL
+	ctx      context.Context
 }
 
 // ParserConfig holds the parameters read from the configuration file.
@@ -50,16 +53,16 @@ type TorrentInfo struct {
 
 // NewFeedParser creates a new Feed object of url.
 func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	fp := gofeed.NewParser()
-	contents, err := fp.ParseURLWithContext(url, ctx)
+	contents, err := fp.ParseURLWithContext(url, ctxWithTimeout)
 	if err != nil {
 		slog.Warn("Failed to fetch feed URL", "url", url, "error", err)
 		return nil
 	}
-	return &Feed{pc, contents, url}
+	return &Feed{pc, contents, url, ctx}
 }
 
 // GetNewItems returns all new items in the RSS feed.
@@ -143,19 +146,22 @@ func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]int64
 				if enclosure.Type != "application/x-bittorrent" {
 					continue
 				}
-				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
-				// If it's not a magnet link (including cases where it's a magnet link but malformed), let the BT client decide what to do.
-				// Do not attempt to obtain the infoHash from the torrent at this time (todo).
+				// Prevent adding magnet links with duplicate infoHashes when processing multiple feeds.
+				// For non-magnet links, attempt to obtain the infoHash from the downloaded torrent file (supports HTTP only).
 				enclosureUrl := html.UnescapeString(enclosure.URL)
-				if infoHashes, err := parseMagnetUri(enclosureUrl); err != nil {
+				infoHashes, err := parseMagnetUri(enclosureUrl)
+				if err != nil {
+					infoHashes, _ = parseTorrentUriWithTimeout(f.ctx, enclosureUrl)
+				}
+				// If any error occurs, infoHash slice is empty. In this case, do not apply infoHash filter.
+				if len(infoHashes) == 0 {
 					urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: nil})
-				} else {
-					for _, infoHash := range infoHashes {
-						// As long as there is at least one infoHash that hasn't been downloaded, add it to the download link list.
-						if _, exist := infoHashSet[infoHash]; !exist {
-							urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: infoHashes})
-							break
-						}
+				}
+				for _, infoHash := range infoHashes {
+					// As long as there is at least one infoHash that hasn't been downloaded, add it to the download link list.
+					if _, exist := infoHashSet[infoHash]; !exist {
+						urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: infoHashes})
+						break
 					}
 				}
 			}
@@ -238,6 +244,7 @@ func allKeywordsMatch(title, keywords string) bool {
 }
 
 // parseMagnetUri parses a URI and returns all infohashes as hex strings if the URI is magnet-formatted.
+// If URI is not a magnet link or is not a valid uri, returns an error.
 func parseMagnetUri(uri string) ([]string, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
@@ -264,9 +271,9 @@ func parseMagnetUri(uri string) ([]string, error) {
 		hashes = append(hashes, hash)
 	}
 
-	if len(hashes) == 0 {
-		return nil, errors.New("no valid urn:btih found")
-	}
+	// if len(hashes) == 0 {
+	// 	return nil, errors.New("no valid urn:btih found")
+	// }
 
 	return hashes, nil
 }
@@ -290,4 +297,41 @@ func regulateInfoHash(s string) (string, error) {
 	}
 
 	return hex.EncodeToString(decoded), nil
+}
+
+// parseTorrentUriWithTimeout downloads a torrent file from the specified URI using an HTTP GET request
+// with a context-based timeout. The function parses the torrent file's metadata and returns the info
+// hash as a hex string. If the request fails or the torrent file cannot be parsed, it returns an error.
+//
+// Parameters:
+//   - ctx: The context used for timeout and cancellation control.
+//   - uri: The URI of the torrent file to download.
+//
+// Returns:
+//   - A slice containing the hex-encoded info hash of the torrent file.
+//   - An error if the request fails or the torrent file cannot be parsed.
+func parseTorrentUriWithTimeout(ctx context.Context, uri string) ([]string, error) {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctxWithTimeout, "GET", uri, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("received non-200 response code")
+	}
+
+	mi, err := metainfo.Load(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{mi.HashInfoBytes().HexString()}, nil
 }

@@ -37,6 +37,8 @@ func NewCache(ctx context.Context) (*Cache, error) {
 	cache := &Cache{
 		data: make(map[string]map[string]int64),
 	}
+
+	// "infoHash" map keeps btih added for 1 day
 	cache.data["infoHash"] = make(map[string]int64)
 	go cache.startCleanupScheduler(ctx, "infoHash")
 
@@ -81,8 +83,8 @@ func (c *Cache) Set(key string, value map[string]int64) {
 		c.data[key] = make(map[string]int64)
 	}
 	data := c.data[key]
-	for key2 := range value {
-		data[key2] = time.Now().Unix()
+	for key := range value {
+		data[key] = time.Now().Unix()
 	}
 }
 
@@ -92,7 +94,7 @@ func (c *Cache) Set(key string, value map[string]int64) {
 // and deletes any entries from that map which are not present in the provided value map.
 //
 // Parameters:
-//   - key: The key used to access the cache map for a specific feed URL.
+//   - key: The key used to access the cache map for a specific sub map, usually feed URL.
 //   - value: A map where keys represent the valid entries. Any entry in the cache map with a key not present in this map will be removed.
 func (c *Cache) RemoveNotIn(key string, value map[string]int64) {
 	if len(value) == 0 {
@@ -101,11 +103,11 @@ func (c *Cache) RemoveNotIn(key string, value map[string]int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	cacheItems := c.data[key]
+	subMap := c.data[key]
 	// Remove cache items that are not in the provided value map
-	for key2 := range cacheItems {
-		if _, found := value[key2]; !found {
-			delete(cacheItems, key2)
+	for key := range subMap {
+		if _, found := value[key]; !found {
+			delete(subMap, key)
 		}
 	}
 }
