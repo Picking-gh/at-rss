@@ -29,9 +29,9 @@ const btihPrefix = "urn:btih:"
 // Feed manages RSS feed parsing configurations, parsed content.
 type Feed struct {
 	*ParserConfig
-	Contents *gofeed.Feed
-	URL      string // feed URL
-	ctx      context.Context
+	Content *gofeed.Feed
+	URL     string // feed URL
+	ctx     context.Context
 }
 
 // ParserConfig holds the parameters read from the configuration file.
@@ -47,7 +47,6 @@ type ParserConfig struct {
 // TorrentInfo represents a single torrent or magnet link found in a feed item.
 type TorrentInfo struct {
 	URL        string   // URL of the .torrent file or magnet link
-	Index      int      // Index of the item in the feed
 	InfoHashes []string // List of infohashes found in the item
 }
 
@@ -65,113 +64,76 @@ func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
 	return &Feed{pc, contents, url, ctx}
 }
 
-// GetNewItems returns all new items in the RSS feed.
-// The cache logs all added items to avoid parsing the same item multiple times.
-func (f *Feed) GetNewItems(cache *Cache) []*gofeed.Item {
-	// Attempt to get GUIDs of added items from cache
-	guid, err := cache.Get(f.URL)
-	if err != nil {
-		return f.Contents.Items
-	}
-
-	// Preallocate slice based on the number of items
-	newItems := make([]*gofeed.Item, 0, len(f.Contents.Items))
-
-	// Find new items
-	for _, item := range f.Contents.Items {
-		if _, found := guid[html.UnescapeString(item.GUID)]; !found {
-			newItems = append(newItems, item)
-		}
-	}
-
-	f.RemoveExpiredItems(cache)
-
-	return newItems
-}
-
-// GetNewTorrents returns the URLs of all new items in the RSS feed.
-// The infoHashSet logs infoHash of all added magnet links to avoid adding the same link multiple times.
-func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]int64) []TorrentInfo {
-	urls := make([]TorrentInfo, 0, len(items))
-	if len(items) == 0 {
-		return urls
-	}
-
+// ProcessFeedItem processes a single feed item to extract the relevant torrent URL(s).
+// It returns a TorrentInfo object containing the URL and related info hashes.
+func (f *Feed) ProcessFeedItem(item *gofeed.Item, infoHashSet map[string]int64) *TorrentInfo {
+	// Apply include and exclude filters on the title
 	cc, _ := gocc.New("t2s") // Convert Traditional Chinese to Simplified Chinese
-	hasExpectedItem := false
-	for i, item := range items {
-		var title string
-		var err error
-		rawTitle := html.UnescapeString(item.Title)
-		if cc != nil {
-			title, err = cc.Convert(rawTitle)
-			if err != nil {
-				slog.Warn("Failed to convert title to simplified Chinese.", "title", rawTitle, "error", err)
-				title = rawTitle
-			}
-		} else {
+	var title string
+	var err error
+	rawTitle := html.UnescapeString(item.Title)
+	if cc != nil {
+		title, err = cc.Convert(rawTitle)
+		if err != nil {
+			slog.Warn("Failed to convert title to simplified Chinese.", "title", rawTitle, "error", err)
 			title = rawTitle
 		}
+	} else {
+		title = rawTitle
+	}
+	if f.shouldSkipItem(strings.ToLower(title)) {
+		return nil
+	}
 
-		if f.shouldSkipItem(strings.ToLower(title)) {
-			continue
-		}
-		if !hasExpectedItem {
-			hasExpectedItem = true
-			slog.Info("Fetching torrents from feed.", "url", f.URL)
-		}
+	slog.Info("Processing item", "title", rawTitle, "url", f.URL)
 
-		slog.Info("Got item", "title", rawTitle)
-
-		if f.Trick {
-			for _, value := range getTagValue(item, f.Tag) {
-				matchStrings := f.r.FindStringSubmatch(value)
-				if len(matchStrings) < 2 {
-					slog.Warn("Pattern did not match any hash.", "pattern", f.Pattern)
-					continue
-				}
-				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
-				infoHash, err := regulateInfoHash(matchStrings[1])
-				if err != nil {
-					slog.Warn("Matched infoHash not valide", "err", err)
-					continue
-				}
-				if _, exist := infoHashSet[infoHash]; exist {
-					continue
-				}
-				url := "magnet:?xt=" + btihPrefix + infoHash
-				urls = append(urls, TorrentInfo{URL: url, Index: i, InfoHashes: []string{infoHash}})
-				slog.Info("Added URL", "url", url)
+	if f.Trick {
+		for _, value := range getTagValue(item, f.Tag) {
+			matchStrings := f.r.FindStringSubmatch(value)
+			if len(matchStrings) < 2 {
+				slog.Warn("Pattern did not match any hash.", "pattern", f.Pattern)
+				continue
 			}
-		} else {
-			for _, enclosure := range item.Enclosures {
-				if enclosure.Type != "application/x-bittorrent" {
-					continue
-				}
-				// Prevent adding magnet links with duplicate infoHashes when processing multiple feeds.
-				// For non-magnet links, attempt to obtain the infoHash from the downloaded torrent file (supports HTTP only).
-				enclosureUrl := html.UnescapeString(enclosure.URL)
-				infoHashes, err := parseMagnetUri(enclosureUrl)
-				if err != nil {
-					infoHashes, _ = parseTorrentUriWithTimeout(f.ctx, enclosureUrl)
-				}
-				// If any error occurs, infoHash slice is empty. In this case, do not apply infoHash filter.
-				if len(infoHashes) == 0 {
-					urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: nil})
+			// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
+			infoHash, err := regulateInfoHash(matchStrings[1])
+			if err != nil {
+				slog.Warn("Matched infoHash not valid", "err", err)
+				continue
+			}
+			if _, exist := infoHashSet[infoHash]; exist {
+				continue
+			}
+			url := "magnet:?xt=" + btihPrefix + infoHash
+			slog.Info("Added URL", "url", url)
+			return &TorrentInfo{URL: url, InfoHashes: []string{infoHash}}
+		}
+	} else {
+		for _, enclosure := range item.Enclosures {
+			if enclosure.Type != "application/x-bittorrent" {
+				continue
+			}
+			// Prevent adding magnet links with duplicate infoHashes when processing multiple feeds.
+			// For non-magnet links, attempt to obtain the infoHash from the downloaded torrent file (supports HTTP only).
+			enclosureUrl := html.UnescapeString(enclosure.URL)
+			infoHashes, err := parseMagnetUri(enclosureUrl)
+			if err != nil {
+				infoHashes, _ = parseTorrentUriWithTimeout(f.ctx, enclosureUrl)
+			}
+			// If any error occurs, infoHash slice is empty. In this case, do not apply infoHash filter.
+			if len(infoHashes) == 0 {
+				slog.Info("Added URL", "url", enclosureUrl)
+				return &TorrentInfo{URL: enclosureUrl, InfoHashes: nil}
+			}
+			for _, infoHash := range infoHashes {
+				// As long as there is at least one infoHash that hasn't been downloaded, add it to the download link list.
+				if _, exist := infoHashSet[infoHash]; !exist {
 					slog.Info("Added URL", "url", enclosureUrl)
-				}
-				for _, infoHash := range infoHashes {
-					// As long as there is at least one infoHash that hasn't been downloaded, add it to the download link list.
-					if _, exist := infoHashSet[infoHash]; !exist {
-						urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: infoHashes})
-						slog.Info("Added URL", "url", enclosureUrl)
-						break
-					}
+					return &TorrentInfo{URL: enclosureUrl, InfoHashes: infoHashes}
 				}
 			}
 		}
 	}
-	return urls
+	return nil
 }
 
 // shouldSkipItem checks if an item should be skipped based on include and exclude filters.
@@ -206,8 +168,8 @@ func (f *Feed) RemoveExpiredItems(cache *Cache) {
 
 // getItemGuidSet creates a set of feed GUIDs
 func (f *Feed) GetGUIDSet() map[string]int64 {
-	feedGuids := make(map[string]int64, len(f.Contents.Items))
-	for _, item := range f.Contents.Items {
+	feedGuids := make(map[string]int64, len(f.Content.Items))
+	for _, item := range f.Content.Items {
 		feedGuids[html.UnescapeString(item.GUID)] = 0
 	}
 	return feedGuids

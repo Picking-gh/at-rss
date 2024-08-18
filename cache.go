@@ -9,7 +9,6 @@ package main
 import (
 	"context"
 	"encoding/gob"
-	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -56,8 +55,8 @@ func NewCache(ctx context.Context) (*Cache, error) {
 	return cache, nil
 }
 
-// Get returns a copy of the value associated with the key or returns an error if the key doesn't exist.
-func (c *Cache) Get(key string) (map[string]int64, error) {
+// Get returns a copy of the value associated with the key or returns an empty map if the key doesn't exist.
+func (c *Cache) Get(key string) map[string]int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -66,9 +65,9 @@ func (c *Cache) Get(key string) (map[string]int64, error) {
 		for k, v := range value {
 			dest[k] = v
 		}
-		return dest, nil
+		return dest
 	}
-	return nil, errors.New("no match found for key " + key)
+	return make(map[string]int64)
 }
 
 // Set stores the given value with the associated key in the cache and persists it.

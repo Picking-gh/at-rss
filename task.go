@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"errors"
+	"html"
 	"log/slog"
 	"time"
 )
@@ -66,20 +67,29 @@ func (t *Task) fetchTorrents(cache *Cache) {
 		client.CloseRpc()
 	}()
 
-	// hashSet keeps the hashes of a magnet link that is added
-	infoHashes, _ := cache.Get("infoHash")
+	// hashSet keeps the hashes of magnet links added
+	infoHashes := cache.Get("infoHash")
 	for _, url := range t.FeedUrls {
 		parser := NewFeedParser(t.ctx, url, t.pc)
 		if parser == nil {
 			continue
 		}
-		items := parser.GetNewItems(cache)
-		torrents := parser.GetNewTorrents(items, infoHashes)
+		seenItems := cache.Get(url) //items processed before
 		addedItems := parser.GetGUIDSet()
-		for _, t := range torrents {
+
+		for _, item := range parser.Content.Items {
+			guid := html.UnescapeString(item.GUID)
+			if _, found := seenItems[guid]; found {
+				continue
+			}
+			t := parser.ProcessFeedItem(item, infoHashes)
+			if t == nil {
+				continue
+			}
 			if err := client.AddTorrent(t.URL); err != nil {
+				// make item unseen if fails to add again in next fetchTorrents call
 				slog.Warn("Failed to add torrent", "URL", t.URL, "err", err)
-				delete(addedItems, items[t.Index].GUID)
+				delete(addedItems, guid)
 			} else {
 				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
 				// Store added megnet links
@@ -88,6 +98,7 @@ func (t *Task) fetchTorrents(cache *Cache) {
 				}
 			}
 		}
+		parser.RemoveExpiredItems(cache)
 		cache.Set(url, addedItems)
 	}
 	cache.Set("infoHash", infoHashes)
