@@ -26,11 +26,11 @@ import (
 
 const btihPrefix = "urn:btih:"
 
-// Feed manages RSS feed parsing configurations, parsed content.
+// Feed manages RSS feed parsing configurations and parsed content.
 type Feed struct {
 	*ParserConfig
 	Content *gofeed.Feed
-	URL     string // feed URL
+	URL     string // Feed URL
 	ctx     context.Context
 }
 
@@ -50,7 +50,7 @@ type TorrentInfo struct {
 	InfoHashes []string // List of infohashes found in the item
 }
 
-// NewFeedParser creates a new Feed object of url.
+// NewFeedParser creates a new Feed object for the specified URL.
 func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -64,18 +64,18 @@ func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
 	return &Feed{pc, contents, url, ctx}
 }
 
-// ProcessFeedItem processes a single feed item to extract the relevant torrent URL(s).
+// ProcessFeedItem processes a single feed item to extract relevant torrent URLs.
 // It returns a TorrentInfo object containing the URL and related info hashes.
 func (f *Feed) ProcessFeedItem(item *gofeed.Item, infoHashSet map[string]int64) *TorrentInfo {
 	// Apply include and exclude filters on the title
 	cc, _ := gocc.New("t2s") // Convert Traditional Chinese to Simplified Chinese
 	var title string
-	var err error
 	rawTitle := html.UnescapeString(item.Title)
 	if cc != nil {
+		var err error
 		title, err = cc.Convert(rawTitle)
 		if err != nil {
-			slog.Warn("Failed to convert title to simplified Chinese.", "title", rawTitle, "error", err)
+			slog.Warn("Failed to convert title to simplified Chinese", "title", rawTitle, "error", err)
 			title = rawTitle
 		}
 	} else {
@@ -91,16 +91,16 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, infoHashSet map[string]int64) 
 		for _, value := range getTagValue(item, f.Tag) {
 			matchStrings := f.r.FindStringSubmatch(value)
 			if len(matchStrings) < 2 {
-				slog.Warn("Pattern did not match any hash.", "pattern", f.Pattern)
+				slog.Warn("Pattern did not match any hash", "pattern", f.Pattern)
 				continue
 			}
 			// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
 			infoHash, err := regulateInfoHash(matchStrings[1])
 			if err != nil {
-				slog.Warn("Matched infoHash not valid", "err", err)
+				slog.Warn("Matched infoHash not valid", "error", err)
 				continue
 			}
-			if _, exist := infoHashSet[infoHash]; exist {
+			if _, exists := infoHashSet[infoHash]; exists {
 				continue
 			}
 			url := "magnet:?xt=" + btihPrefix + infoHash
@@ -114,21 +114,21 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, infoHashSet map[string]int64) 
 			}
 			// Prevent adding magnet links with duplicate infoHashes when processing multiple feeds.
 			// For non-magnet links, attempt to obtain the infoHash from the downloaded torrent file (supports HTTP only).
-			enclosureUrl := html.UnescapeString(enclosure.URL)
-			infoHashes, err := parseMagnetUri(enclosureUrl)
+			enclosureURL := html.UnescapeString(enclosure.URL)
+			infoHashes, err := parseMagnetURI(enclosureURL)
 			if err != nil {
-				infoHashes, _ = parseTorrentUriWithTimeout(f.ctx, enclosureUrl)
+				infoHashes, _ = parseTorrentURIWithTimeout(f.ctx, enclosureURL)
 			}
-			// If any error occurs, infoHash slice is empty. In this case, do not apply infoHash filter.
+			// If any error occurs, infoHashes slice is empty. In this case, do not apply infoHash filter.
 			if len(infoHashes) == 0 {
-				slog.Info("Added URL", "url", enclosureUrl)
-				return &TorrentInfo{URL: enclosureUrl, InfoHashes: nil}
+				slog.Info("Added URL", "url", enclosureURL)
+				return &TorrentInfo{URL: enclosureURL, InfoHashes: nil}
 			}
 			for _, infoHash := range infoHashes {
-				// As long as there is at least one infoHash that hasn't been downloaded, add it to the download link list.
-				if _, exist := infoHashSet[infoHash]; !exist {
-					slog.Info("Added URL", "url", enclosureUrl)
-					return &TorrentInfo{URL: enclosureUrl, InfoHashes: infoHashes}
+				// Add to download link list if at least one infoHash hasn't been downloaded.
+				if _, exists := infoHashSet[infoHash]; !exists {
+					slog.Info("Added URL", "url", enclosureURL)
+					return &TorrentInfo{URL: enclosureURL, InfoHashes: infoHashes}
 				}
 			}
 		}
@@ -161,22 +161,21 @@ func (f *Feed) shouldSkipItem(title string) bool {
 	return true
 }
 
-// RemoveExpiredItems removes items from the cache that are not present in the feed
+// RemoveExpiredItems removes items from the cache that are not present in the feed.
 func (f *Feed) RemoveExpiredItems(cache *Cache) {
 	cache.RemoveNotIn(f.URL, f.GetGUIDSet())
 }
 
-// getItemGuidSet creates a set of feed GUIDs
+// GetGUIDSet creates a set of feed GUIDs.
 func (f *Feed) GetGUIDSet() map[string]int64 {
-	feedGuids := make(map[string]int64, len(f.Content.Items))
+	feedGUIDs := make(map[string]int64, len(f.Content.Items))
 	for _, item := range f.Content.Items {
-		feedGuids[html.UnescapeString(item.GUID)] = 0
+		feedGUIDs[html.UnescapeString(item.GUID)] = 0
 	}
-	return feedGuids
+	return feedGUIDs
 }
 
-// getTagValue returns tag value in *gofeed.Item. For enclosure tag, may appear multiple times; returns []string for all tags.
-// tagName is validated before, ensuring no errors here.
+// getTagValue returns tag values in *gofeed.Item. For enclosure tags, it may appear multiple times; returns []string for all tags.
 func getTagValue(item *gofeed.Item, tagName string) []string {
 	switch tagName {
 	case "title":
@@ -209,9 +208,9 @@ func allKeywordsMatch(title, keywords string) bool {
 	return true
 }
 
-// parseMagnetUri parses a URI and returns all infohashes as hex strings if the URI is magnet-formatted.
-// If URI is not a magnet link or is not a valid uri, returns an error.
-func parseMagnetUri(uri string) ([]string, error) {
+// parseMagnetURI parses a URI and returns all infohashes as hex strings if the URI is magnet-formatted.
+// If URI is not a magnet link or is not valid, returns an error.
+func parseMagnetURI(uri string) ([]string, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return nil, err
@@ -237,14 +236,10 @@ func parseMagnetUri(uri string) ([]string, error) {
 		hashes = append(hashes, hash)
 	}
 
-	// if len(hashes) == 0 {
-	// 	return nil, errors.New("no valid urn:btih found")
-	// }
-
 	return hashes, nil
 }
 
-// regulateInfoHash decodes the infoHash from the s string and returns its hex representation.
+// regulateInfoHash decodes the infoHash from the string and returns its hex representation.
 func regulateInfoHash(s string) (string, error) {
 	var decoded []byte
 	var err error
@@ -265,39 +260,28 @@ func regulateInfoHash(s string) (string, error) {
 	return hex.EncodeToString(decoded), nil
 }
 
-// parseTorrentUriWithTimeout downloads a torrent file from the specified URI using an HTTP GET request
-// with a context-based timeout. The function parses the torrent file's metadata and returns the info
-// hash as a hex string. If the request fails or the torrent file cannot be parsed, it returns an error.
-//
-// Parameters:
-//   - ctx: The context used for timeout and cancellation control.
-//   - uri: The URI of the torrent file to download.
-//
-// Returns:
-//   - A slice containing the hex-encoded info hash of the torrent file.
-//   - An error if the request fails or the torrent file cannot be parsed.
-func parseTorrentUriWithTimeout(ctx context.Context, uri string) ([]string, error) {
+// parseTorrentURIWithTimeout downloads a torrent file from the specified URI using an HTTP GET request
+// with a context-based timeout. It parses the torrent file's metadata and returns the info hash as a hex string.
+// If the request fails or the torrent file cannot be parsed, it returns an error.
+func parseTorrentURIWithTimeout(ctx context.Context, uri string) ([]string, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctxWithTimeout, "GET", uri, nil)
+	req, err := http.NewRequestWithContext(ctxWithTimeout, http.MethodGet, uri, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("received non-200 response code")
-	}
-
-	mi, err := metainfo.Load(resp.Body)
+	metaInfo, err := metainfo.Load(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	return []string{mi.HashInfoBytes().HexString()}, nil
+	return []string{metaInfo.HashInfoBytes().HexString()}, nil
 }
