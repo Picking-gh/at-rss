@@ -1,0 +1,218 @@
+/*
+ * Copyright (C) 2024 Picking-gh <picking@woft.name>
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+package main
+
+import (
+	"context"
+	"database/sql"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3" // Import SQLite driver
+)
+
+const cachePath = ".cache/at-rss.db"
+
+// Cache is a struct that holds information related to RSS feed items.
+// It uses SQLite to persist data, where each key is a feed URL (string),
+// and the value is a map that stores GUIDs with their timestamps.
+type Cache struct {
+	db   *sql.DB
+	path string
+}
+
+// NewCache creates a new Cache object and initializes the SQLite database.
+func NewCache(ctx context.Context) (*Cache, error) {
+	cache := &Cache{}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("Failed to locate user's home directory.", "err", err)
+		return nil, err
+	}
+	cache.path = filepath.Join(homeDir, cachePath)
+
+	// Open the SQLite database file
+	db, err := sql.Open("sqlite3", cache.path)
+	if err != nil {
+		slog.Error("Failed to open SQLite database.", "err", err)
+		return nil, err
+	}
+	cache.db = db
+
+	// Initialize tables
+	if err := cache.initializeTables(); err != nil {
+		return nil, err
+	}
+
+	// go cache.startCleanupScheduler(ctx)
+
+	return cache, nil
+}
+
+// initializeTables creates necessary tables if they do not exist.
+func (c *Cache) initializeTables() error {
+	_, err := c.db.Exec(`CREATE TABLE IF NOT EXISTS feed_items (
+		 feed_url TEXT,
+		 item_guid TEXT,
+		 timestamp INTEGER,
+		 PRIMARY KEY (feed_url, item_guid)
+	 )`)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.db.Exec(`CREATE TABLE IF NOT EXISTS info_hash (
+		 btih TEXT PRIMARY KEY,
+		 timestamp INTEGER
+	 )`)
+	return err
+}
+
+// Get returns a map of GUIDs and their timestamps for the specified feed URL.
+func (c *Cache) Get(feedURL string) (map[string]int64, error) {
+	rows, err := c.db.Query(`SELECT item_guid, timestamp FROM feed_items WHERE feed_url = ?`, feedURL)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]int64)
+	for rows.Next() {
+		var guid string
+		var timestamp int64
+		if err := rows.Scan(&guid, &timestamp); err != nil {
+			return nil, err
+		}
+		result[guid] = timestamp
+	}
+
+	return result, nil
+}
+
+// Set stores the given value with the associated feed URL in the cache.
+func (c *Cache) Set(feedURL string, items map[string]int64) {
+	if len(items) == 0 {
+		return
+	}
+	tx, err := c.db.Begin()
+	if err != nil {
+		slog.Error("Failed to begin transaction.", "err", err)
+		return
+	}
+
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO feed_items (feed_url, item_guid, timestamp) VALUES (?, ?, ?)`)
+	if err != nil {
+		slog.Error("Failed to prepare SQL statement.", "err", err)
+		tx.Rollback()
+		return
+	}
+	defer stmt.Close()
+
+	for guid, timestamp := range items {
+		if _, err := stmt.Exec(feedURL, guid, timestamp); err != nil {
+			slog.Error("Failed to execute SQL statement.", "err", err)
+			tx.Rollback()
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		slog.Error("Failed to commit transaction.", "err", err)
+	}
+}
+
+// RemoveNotIn removes entries from the cache that are not present in the provided value map.
+func (c *Cache) RemoveNotIn(feedURL string, validItems map[string]int64) {
+	if len(validItems) == 0 {
+		return
+	}
+	tx, err := c.db.Begin()
+	if err != nil {
+		slog.Error("Failed to begin transaction.", "err", err)
+		return
+	}
+
+	stmt, err := tx.Prepare(`DELETE FROM feed_items WHERE feed_url = ? AND item_guid NOT IN (?)
+	 `)
+	if err != nil {
+		slog.Error("Failed to prepare SQL statement.", "err", err)
+		tx.Rollback()
+		return
+	}
+	defer stmt.Close()
+
+	validGUIDs := ""
+	for guid := range validItems {
+		if validGUIDs != "" {
+			validGUIDs += ","
+		}
+		validGUIDs += "'" + guid + "'"
+	}
+
+	if _, err := stmt.Exec(feedURL, validGUIDs); err != nil {
+		slog.Error("Failed to execute SQL statement.", "err", err)
+		tx.Rollback()
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		slog.Error("Failed to commit transaction.", "err", err)
+	}
+}
+
+// Flush commits all changes to the SQLite database.
+func (c *Cache) Flush() error {
+	// SQLite commits changes automatically, so nothing needs to be done here.
+	return nil
+}
+
+// cleanupExpiredEntries removes entries with timestamps older than 24 hours.
+func (c *Cache) cleanupExpiredEntries() {
+	oneDayAgo := time.Now().Add(-24 * time.Hour).Unix()
+
+	tx, err := c.db.Begin()
+	if err != nil {
+		slog.Error("Failed to begin transaction.", "err", err)
+		return
+	}
+
+	_, err = tx.Exec(`DELETE FROM feed_items WHERE timestamp < ?`, oneDayAgo)
+	if err != nil {
+		slog.Error("Failed to execute SQL statement.", "err", err)
+		tx.Rollback()
+		return
+	}
+
+	_, err = tx.Exec(`DELETE FROM info_hash WHERE timestamp < ?`, oneDayAgo)
+	if err != nil {
+		slog.Error("Failed to execute SQL statement.", "err", err)
+		tx.Rollback()
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		slog.Error("Failed to commit transaction.", "err", err)
+	}
+}
+
+// startCleanupScheduler initiates a scheduled cleanup task that runs every hour.
+func (c *Cache) startCleanupScheduler(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.cleanupExpiredEntries()
+		}
+	}
+}
