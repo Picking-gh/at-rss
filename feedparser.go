@@ -124,8 +124,8 @@ func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]int64
 		slog.Info("Got item", "title", rawTitle)
 
 		if f.Trick {
-			for _, url := range getTagValue(item, f.Tag) {
-				matchStrings := f.r.FindStringSubmatch(url)
+			for _, value := range getTagValue(item, f.Tag) {
+				matchStrings := f.r.FindStringSubmatch(value)
 				if len(matchStrings) < 2 {
 					slog.Warn("Pattern did not match any hash.", "pattern", f.Pattern)
 					continue
@@ -139,7 +139,9 @@ func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]int64
 				if _, exist := infoHashSet[infoHash]; exist {
 					continue
 				}
-				urls = append(urls, TorrentInfo{URL: "magnet:?xt=" + btihPrefix + infoHash, Index: i, InfoHashes: []string{infoHash}})
+				url := "magnet:?xt=" + btihPrefix + infoHash
+				urls = append(urls, TorrentInfo{URL: url, Index: i, InfoHashes: []string{infoHash}})
+				slog.Info("Added URL", "url", url)
 			}
 		} else {
 			for _, enclosure := range item.Enclosures {
@@ -156,11 +158,13 @@ func (f *Feed) GetNewTorrents(items []*gofeed.Item, infoHashSet map[string]int64
 				// If any error occurs, infoHash slice is empty. In this case, do not apply infoHash filter.
 				if len(infoHashes) == 0 {
 					urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: nil})
+					slog.Info("Added URL", "url", enclosureUrl)
 				}
 				for _, infoHash := range infoHashes {
 					// As long as there is at least one infoHash that hasn't been downloaded, add it to the download link list.
 					if _, exist := infoHashSet[infoHash]; !exist {
 						urls = append(urls, TorrentInfo{URL: enclosureUrl, Index: i, InfoHashes: infoHashes})
+						slog.Info("Added URL", "url", enclosureUrl)
 						break
 					}
 				}
