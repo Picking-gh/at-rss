@@ -14,19 +14,21 @@ import (
 	"time"
 )
 
+type ServerConfig struct {
+	RpcType  string // "aria2c" or "transmission"
+	Url      string // for aria2c rpc
+	Token    string // for aria2c rpc
+	Host     string // for transmission rpc
+	Port     uint16 // for transmission rpc
+	Username string // for transmission rpc
+	Password string // for transmission rpc
+}
+
 type Task struct {
-	Server struct {
-		RpcType string // "aria2c" or "transmission"
-		Url     string // for aria2c rpc
-		Token   string // for aria2c rpc
-		Host    string // for transmission rpc
-		Port    uint16 // for transmission rpc
-		User    string // for transmission rpc
-		Pswd    string // for transmission rpc
-	}
-	FetchInterval time.Duration // Changed to time.Duration for better time handling
+	ServerConfig  ServerConfig
+	FetchInterval time.Duration
 	FeedUrls      []string
-	pc            *ParserConfig
+	parserConfig  *ParserConfig
 	ctx           context.Context
 }
 
@@ -57,9 +59,9 @@ func (t *Task) Start(ctx context.Context, cache *Cache) {
 
 // fetchTorrents retrieves torrents via the appropriate RPC client.
 func (t *Task) fetchTorrents(cache *Cache) {
-	client, err := t.createClient()
+	client, err := t.createRpcClient()
 	if err != nil {
-		slog.Warn("Failed to create RPC client", "rpcType", t.Server.RpcType, "err", err)
+		slog.Warn("Failed to create RPC client", "rpcType", t.ServerConfig.RpcType, "err", err)
 		return
 	}
 	defer func() {
@@ -67,56 +69,56 @@ func (t *Task) fetchTorrents(cache *Cache) {
 		client.CloseRpc()
 	}()
 
-	// hashSet keeps the hashes of magnet links added
-	infoHashes := cache.Get("infoHash")
-	for _, url := range t.FeedUrls {
-		parser := NewFeedParser(t.ctx, url, t.pc)
+	// infoHashMap keeps track of the hashes of magnet links added
+	infoHashMap := cache.Get("infoHash")
+	for _, feedUrl := range t.FeedUrls {
+		parser := NewFeedParser(t.ctx, feedUrl, t.parserConfig)
 		if parser == nil {
 			continue
 		}
-		seenItems := cache.Get(url) //items processed before
-		addedItems := parser.GetGUIDSet()
+		processedItems := cache.Get(feedUrl) // Items processed before
+		newItems := parser.GetGUIDSet()
 
 		for _, item := range parser.Content.Items {
 			guid := html.UnescapeString(item.GUID)
-			if _, found := seenItems[guid]; found {
+			if _, alreadyProcessed := processedItems[guid]; alreadyProcessed {
 				continue
 			}
-			t := parser.ProcessFeedItem(item, infoHashes)
-			if t == nil {
+			torrent := parser.ProcessFeedItem(item, infoHashMap)
+			if torrent == nil {
 				continue
 			}
-			if err := client.AddTorrent(t.URL); err != nil {
-				// make item unseen if fails to add again in next fetchTorrents call
-				slog.Warn("Failed to add torrent", "URL", t.URL, "err", err)
-				delete(addedItems, guid)
+			if err := client.AddTorrent(torrent.URL); err != nil {
+				// Mark item as unprocessed if it fails to add, so it's retried in the next fetchTorrents call
+				slog.Warn("Failed to add torrent", "URL", torrent.URL, "err", err)
+				delete(newItems, guid)
 			} else {
 				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
-				// Store added megnet links
-				for _, infoHash := range t.InfoHashes {
-					infoHashes[infoHash] = time.Now().Unix()
+				// Store added magnet links' infoHashes
+				for _, infoHash := range torrent.InfoHashes {
+					infoHashMap[infoHash] = time.Now().Unix()
 				}
 			}
 		}
 		parser.RemoveExpiredItems(cache)
-		cache.Set(url, addedItems)
+		cache.Set(feedUrl, newItems)
 	}
-	cache.Set("infoHash", infoHashes)
+	cache.Set("infoHash", infoHashMap)
 	cache.Flush()
 }
 
-// createClient initializes the appropriate RPC client based on RpcType.
-func (t *Task) createClient() (RpcClient, error) {
+// createRpcClient initializes the appropriate RPC client based on RpcType.
+func (t *Task) createRpcClient() (RpcClient, error) {
 	var client RpcClient
 	var err error
 
-	switch t.Server.RpcType {
+	switch t.ServerConfig.RpcType {
 	case "aria2c":
-		client, err = NewAria2c(t.ctx, t.Server.Url, t.Server.Token)
+		client, err = NewAria2c(t.ctx, t.ServerConfig.Url, t.ServerConfig.Token)
 	case "transmission":
-		client, err = NewTransmission(t.ctx, t.Server.Host, t.Server.Port, t.Server.User, t.Server.Pswd)
+		client, err = NewTransmission(t.ctx, t.ServerConfig.Host, t.ServerConfig.Port, t.ServerConfig.Username, t.ServerConfig.Password)
 	default:
-		err = errors.New("unknown rpcType: " + t.Server.RpcType)
+		err = errors.New("unknown RpcType: " + t.ServerConfig.RpcType)
 	}
 
 	return client, err

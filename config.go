@@ -96,7 +96,7 @@ func parseTask(task map[string]interface{}, cc *gocc.OpenCC) (*Task, error) {
 		return nil, errors.New("feed section missing")
 	}
 
-	t := &Task{pc: &ParserConfig{}, FetchInterval: defaultFetchInterval * time.Minute}
+	t := &Task{parserConfig: &ParserConfig{}, FetchInterval: defaultFetchInterval * time.Minute}
 
 	for k, v := range task {
 		switch strings.ToLower(k) {
@@ -128,27 +128,27 @@ func parseTask(task map[string]interface{}, cc *gocc.OpenCC) (*Task, error) {
 func parseAria2cConfig(t *Task, v interface{}) {
 	server, ok := v.(map[string]interface{})
 	if !ok || server == nil {
-		t.Server.Url = defaultAria2cRpcUrl
+		t.ServerConfig.Url = defaultAria2cRpcUrl
 	} else {
-		t.Server.Url = getStringOrDefault(server["url"], defaultAria2cRpcUrl)
-		t.Server.Token = convertToString(server["token"])
+		t.ServerConfig.Url = getStringOrDefault(server["url"], defaultAria2cRpcUrl)
+		t.ServerConfig.Token = convertToString(server["token"])
 	}
-	t.Server.RpcType = "aria2c"
+	t.ServerConfig.RpcType = "aria2c"
 }
 
 // parseTransmissionConfig processes the transmission configuration.
 func parseTransmissionConfig(t *Task, v interface{}) {
 	server, ok := v.(map[string]interface{})
 	if !ok || server == nil {
-		t.Server.Host = defaultTransmissionRpcHost
-		t.Server.Port = defaultTransmissionRpcPort
+		t.ServerConfig.Host = defaultTransmissionRpcHost
+		t.ServerConfig.Port = defaultTransmissionRpcPort
 	} else {
-		t.Server.Host = getStringOrDefault(server["host"], defaultTransmissionRpcHost)
-		t.Server.Port = uint16(getIntOrDefault(server["port"], defaultTransmissionRpcPort))
-		t.Server.User = convertToString(server["username"])
-		t.Server.Pswd = convertToString(server["password"])
+		t.ServerConfig.Host = getStringOrDefault(server["host"], defaultTransmissionRpcHost)
+		t.ServerConfig.Port = uint16(getIntOrDefault(server["port"], defaultTransmissionRpcPort))
+		t.ServerConfig.Username = convertToString(server["username"])
+		t.ServerConfig.Password = convertToString(server["password"])
 	}
-	t.Server.RpcType = "transmission"
+	t.ServerConfig.RpcType = "transmission"
 }
 
 // parseFeedConfig processes the feed configuration.
@@ -174,8 +174,8 @@ func parseFeedsConfig(v interface{}) []string {
 func parseFilterConfig(t *Task, v interface{}, cc *gocc.OpenCC) {
 	if rawMap, ok := v.(map[string]interface{}); ok {
 		filter := convertToStringSliceMap(rawMap)
-		t.pc.Include = normalizeAndSimplifyTexts(cc, filter["include"])
-		t.pc.Exclude = normalizeAndSimplifyTexts(cc, filter["exclude"])
+		t.parserConfig.Include = normalizeAndSimplifyTexts(cc, filter["include"])
+		t.parserConfig.Exclude = normalizeAndSimplifyTexts(cc, filter["exclude"])
 	}
 }
 
@@ -194,7 +194,7 @@ func parseExtracterConfig(t *Task, v interface{}) error {
 	if _, valid := validTags[tag]; !valid {
 		return errors.New("invalid 'tag': " + tag + " in extracter")
 	}
-	t.pc.Tag = tag
+	t.parserConfig.Tag = tag
 
 	pattern, patternOk := extract["pattern"].(string)
 	if !patternOk || pattern == "" {
@@ -204,10 +204,10 @@ func parseExtracterConfig(t *Task, v interface{}) error {
 	if err != nil {
 		return errors.New("invalid 'pattern': " + pattern + " in extracter")
 	}
-	t.pc.Pattern = pattern
-	t.pc.r = r
+	t.parserConfig.Pattern = pattern
+	t.parserConfig.r = r
 
-	t.pc.Trick = true
+	t.parserConfig.Trick = true
 
 	return nil
 }
