@@ -8,7 +8,9 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,8 +22,7 @@ import (
 const cachePath = ".cache/at-rss.db"
 
 // Cache is a struct that holds information related to RSS feed items.
-// It uses SQLite to persist data, where each key is a feed URL (string),
-// and the value is a map that stores GUIDs with their timestamps.
+// It uses SQLite to persist data.
 type Cache struct {
 	db   *sql.DB
 	path string
@@ -51,7 +52,7 @@ func NewCache(ctx context.Context) (*Cache, error) {
 		return nil, err
 	}
 
-	// go cache.startCleanupScheduler(ctx)
+	go cache.startCleanupScheduler(ctx)
 
 	return cache, nil
 }
@@ -59,27 +60,59 @@ func NewCache(ctx context.Context) (*Cache, error) {
 // initializeTables creates necessary tables if they do not exist.
 func (c *Cache) initializeTables() error {
 	_, err := c.db.Exec(`CREATE TABLE IF NOT EXISTS feed_items (
-		 feed_url TEXT,
-		 item_guid TEXT,
-		 timestamp INTEGER,
-		 PRIMARY KEY (feed_url, item_guid)
-	 )`)
+		  md5_hash TEXT,
+		  item_guid TEXT,
+		  timestamp INTEGER,
+		  PRIMARY KEY (md5_hash, item_guid)
+	  )`)
 	if err != nil {
 		return err
 	}
 
 	_, err = c.db.Exec(`CREATE TABLE IF NOT EXISTS info_hash (
-		 btih TEXT PRIMARY KEY,
-		 timestamp INTEGER
-	 )`)
+		  btih TEXT PRIMARY KEY,
+		  timestamp INTEGER
+	  )`)
+
+	_, err = c.db.Exec(`CREATE TABLE IF NOT EXISTS feed_urls (
+		md5_hash TEXT PRIMARY KEY,
+		feed_url TEXT
+	)`)
+
 	return err
 }
 
-// Get returns a map of GUIDs and their timestamps for the specified feed URL.
-func (c *Cache) Get(feedURL string) (map[string]int64, error) {
-	rows, err := c.db.Query(`SELECT item_guid, timestamp FROM feed_items WHERE feed_url = ?`, feedURL)
+// AddFeedURL adds a feed_url and its corresponding SHA-1 hash to the feed_urls table.
+func (c *Cache) AddFeedURL(feedURL string) (string, error) {
+	md5Hash := fmt.Sprintf("%x", md5.Sum([]byte(feedURL)))
+
+	_, err := c.db.Exec(`INSERT OR IGNORE INTO feed_urls (md5_hash, feed_url) VALUES (?, ?)`, md5Hash, feedURL)
 	if err != nil {
-		return nil, err
+		return "", err
+	}
+
+	return md5Hash, nil
+}
+
+// Get returns a map of GUIDs and their timestamps for the specified key (e.g., "infoHash" or feed URL).
+func (c *Cache) Get(key string) map[string]int64 {
+	var query string
+	var param string
+
+	if key == "infoHash" {
+		// Get all stored info_hash values
+		query = `SELECT btih, timestamp FROM info_hash`
+		param = ""
+	} else {
+		// Assume the key is a feed URL, convert it to SHA-1 and get associated items
+		md5Hash, _ := c.AddFeedURL(key)
+		query = `SELECT item_guid, timestamp FROM feed_items WHERE md5_hash = ?`
+		param = md5Hash
+	}
+
+	rows, err := c.db.Query(query, param)
+	if err != nil {
+		return map[string]int64{}
 	}
 	defer rows.Close()
 
@@ -88,26 +121,41 @@ func (c *Cache) Get(feedURL string) (map[string]int64, error) {
 		var guid string
 		var timestamp int64
 		if err := rows.Scan(&guid, &timestamp); err != nil {
-			return nil, err
+			return map[string]int64{}
 		}
 		result[guid] = timestamp
 	}
 
-	return result, nil
+	return result
 }
 
-// Set stores the given value with the associated feed URL in the cache.
-func (c *Cache) Set(feedURL string, items map[string]int64) {
+// Set stores the given value with the associated key (e.g., "infoHash" or feed URL) in the cache.
+func (c *Cache) Set(key string, items map[string]int64) {
 	if len(items) == 0 {
 		return
 	}
+
+	var query string
+	var param string
+
+	if key == "infoHash" {
+		// Store info_hash values directly in the info_hash table
+		query = `INSERT OR REPLACE INTO info_hash (btih, timestamp) VALUES (?, ?)`
+		param = "" // `key` itself would be the info_hash in this case
+	} else {
+		// Assume the key is a feed URL, convert it to SHA-1 and store associated items
+		md5Hash, _ := c.AddFeedURL(key)
+		query = `INSERT OR REPLACE INTO feed_items (md5_hash, item_guid, timestamp) VALUES (?, ?, ?)`
+		param = md5Hash
+	}
+
 	tx, err := c.db.Begin()
 	if err != nil {
 		slog.Error("Failed to begin transaction.", "err", err)
 		return
 	}
 
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO feed_items (feed_url, item_guid, timestamp) VALUES (?, ?, ?)`)
+	stmt, err := tx.Prepare(query)
 	if err != nil {
 		slog.Error("Failed to prepare SQL statement.", "err", err)
 		tx.Rollback()
@@ -116,10 +164,18 @@ func (c *Cache) Set(feedURL string, items map[string]int64) {
 	defer stmt.Close()
 
 	for guid, timestamp := range items {
-		if _, err := stmt.Exec(feedURL, guid, timestamp); err != nil {
-			slog.Error("Failed to execute SQL statement.", "err", err)
-			tx.Rollback()
-			return
+		if key == "infoHash" {
+			if _, err := stmt.Exec(guid, timestamp); err != nil {
+				slog.Error("Failed to execute SQL statement.", "err", err)
+				tx.Rollback()
+				return
+			}
+		} else {
+			if _, err := stmt.Exec(param, guid, timestamp); err != nil {
+				slog.Error("Failed to execute SQL statement.", "err", err)
+				tx.Rollback()
+				return
+			}
 		}
 	}
 
@@ -129,18 +185,32 @@ func (c *Cache) Set(feedURL string, items map[string]int64) {
 }
 
 // RemoveNotIn removes entries from the cache that are not present in the provided value map.
-func (c *Cache) RemoveNotIn(feedURL string, validItems map[string]int64) {
+func (c *Cache) RemoveNotIn(key string, validItems map[string]int64) {
 	if len(validItems) == 0 {
 		return
 	}
+
+	var query string
+	var param string
+
+	if key == "infoHash" {
+		// Example for infoHash handling (assuming such a case is required)
+		query = `DELETE FROM info_hash WHERE btih NOT IN (?)`
+		param = ""
+	} else {
+		// Assume the key is a feed URL, convert it to SHA-1
+		md5Hash, _ := c.AddFeedURL(key)
+		query = `DELETE FROM feed_items WHERE md5_hash = ? AND item_guid NOT IN (?)`
+		param = md5Hash
+	}
+
 	tx, err := c.db.Begin()
 	if err != nil {
 		slog.Error("Failed to begin transaction.", "err", err)
 		return
 	}
 
-	stmt, err := tx.Prepare(`DELETE FROM feed_items WHERE feed_url = ? AND item_guid NOT IN (?)
-	 `)
+	stmt, err := tx.Prepare(query)
 	if err != nil {
 		slog.Error("Failed to prepare SQL statement.", "err", err)
 		tx.Rollback()
@@ -156,7 +226,7 @@ func (c *Cache) RemoveNotIn(feedURL string, validItems map[string]int64) {
 		validGUIDs += "'" + guid + "'"
 	}
 
-	if _, err := stmt.Exec(feedURL, validGUIDs); err != nil {
+	if _, err := stmt.Exec(param, validGUIDs); err != nil {
 		slog.Error("Failed to execute SQL statement.", "err", err)
 		tx.Rollback()
 		return
@@ -180,13 +250,6 @@ func (c *Cache) cleanupExpiredEntries() {
 	tx, err := c.db.Begin()
 	if err != nil {
 		slog.Error("Failed to begin transaction.", "err", err)
-		return
-	}
-
-	_, err = tx.Exec(`DELETE FROM feed_items WHERE timestamp < ?`, oneDayAgo)
-	if err != nil {
-		slog.Error("Failed to execute SQL statement.", "err", err)
-		tx.Rollback()
 		return
 	}
 
