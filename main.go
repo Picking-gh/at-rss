@@ -53,7 +53,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Init task manager
+	// Function to manage tasks
 	at_rss := func(ctx context.Context) {
 		// Init cache for parsing torrent files
 		cache, err := NewCache(ctx)
@@ -66,10 +66,10 @@ func main() {
 		if err != nil {
 			os.Exit(1)
 		}
-		// Start tasks in separate goroutines
 		if len(*tasks) == 0 {
 			slog.Warn("No task is running.")
 		}
+		// Start tasks in separate goroutines
 		for _, task := range *tasks {
 			wg.Add(1)
 			go func(task *Task) {
@@ -79,38 +79,36 @@ func main() {
 			time.Sleep(5 * time.Second) // Optional delay between starting tasks
 		}
 	}
-
 	at_rss(ctx)
-	var reloadTimer *time.Timer
 
+	var debounceTimer *time.Timer
+	debounceDuration := 5 * time.Second
 	for {
 		select {
-		case <-stop:
+		case <-stop: // termination signals
 			cancel()
 			wg.Wait()
 			return
-		case event, ok := <-watcher.Events:
+		case event, ok := <-watcher.Events: // reload configure file when changed
 			if !ok {
 				slog.Error("Configure file watching error", "error:", err)
 				return
 			}
-			// When configure file changes, reset reload timer
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				if reloadTimer != nil {
-					reloadTimer.Stop()
+			if event.Has(fsnotify.Write) {
+				// debounce
+				if debounceTimer == nil {
+					debounceTimer = time.AfterFunc(debounceDuration, func() {
+						slog.Info("Reloading configure file...")
+						cancel()
+						wg.Wait()
+						ctx, cancel = context.WithCancel(context.Background())
+						at_rss(ctx)
+						debounceTimer = nil
+						slog.Info("Configure file reloaded.")
+					})
+				} else {
+					debounceTimer.Reset(debounceDuration)
 				}
-				reloadTimer = time.AfterFunc(5*time.Second, func() {
-					cancel()
-					wg.Wait()
-
-					ctx, cancel = context.WithCancel(context.Background())
-					at_rss(ctx)
-				})
-			}
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				slog.Error("Configure file watching error", "error:", err)
-				return
 			}
 		}
 	}
