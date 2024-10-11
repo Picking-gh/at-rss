@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/jessevdk/go-flags"
 )
 
@@ -31,44 +32,88 @@ func main() {
 		handleFlagsError(err)
 	}
 
-	// Load configuration and initialize cache
-	tasks, err := LoadConfig(opt.Config)
+	// Init watcher for reload configure files
+	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		os.Exit(1)
 	}
-
-	// Create context and wait group for goroutines
-	var wg sync.WaitGroup
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	cache, err := NewCache(ctx)
+	defer watcher.Close()
+	err = watcher.Add(opt.Config)
 	if err != nil {
+		slog.Error("Can't watch configure file.")
 		os.Exit(1)
-	}
-	defer cache.Flush()
-
-	// Start tasks in separate goroutines
-	if len(*tasks) == 0 {
-		slog.Warn("No task is runing.")
-	}
-	for _, task := range *tasks {
-		wg.Add(1)
-		go func(task *Task) {
-			defer wg.Done()
-			task.Start(ctx, cache)
-		}(task)
-		time.Sleep(5 * time.Second)
 	}
 
 	// Handle termination signals
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-	cancel()
 
-	// Wait for all tasks to finish
-	wg.Wait()
+	var wg sync.WaitGroup
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Init task manager
+	at_rss := func(ctx context.Context) {
+		// Init cache for parsing torrent files
+		cache, err := NewCache(ctx)
+		if err != nil {
+			os.Exit(1)
+		}
+		defer cache.Flush()
+
+		tasks, err := LoadConfig(opt.Config)
+		if err != nil {
+			os.Exit(1)
+		}
+		// Start tasks in separate goroutines
+		if len(*tasks) == 0 {
+			slog.Warn("No task is running.")
+		}
+		for _, task := range *tasks {
+			wg.Add(1)
+			go func(task *Task) {
+				defer wg.Done()
+				task.Start(ctx, cache)
+			}(task)
+			time.Sleep(5 * time.Second) // Optional delay between starting tasks
+		}
+	}
+
+	at_rss(ctx)
+	var reloadTimer *time.Timer
+
+	for {
+		select {
+		case <-stop:
+			cancel()
+			wg.Wait()
+			return
+		case event, ok := <-watcher.Events:
+			if !ok {
+				slog.Error("Configure file watching error", "error:", err)
+				return
+			}
+			// When configure file changes, reset reload timer
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				if reloadTimer != nil {
+					reloadTimer.Stop()
+				}
+				reloadTimer = time.AfterFunc(5*time.Second, func() {
+					cancel()
+					wg.Wait()
+
+					ctx, cancel = context.WithCancel(context.Background())
+					at_rss(ctx)
+				})
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				slog.Error("Configure file watching error", "error:", err)
+				return
+			}
+		}
+	}
 }
 
 // handleFlagsError processes errors from flag parsing
