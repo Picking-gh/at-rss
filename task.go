@@ -46,11 +46,13 @@ func (t *Task) Start(ctx context.Context, cache *Cache) {
 	t.ctx = ctx
 
 	// Fetch torrents initially and then repeatedly at intervals
-	t.fetchTorrents(cache)
+	// The initial invoking does not ignore processed items. In this case, configure may have been changed, and shall check processed items to apply new filters
+	// The repeated invokings ignore processed items. In this case, configure is kept unchanged.
+	t.fetchTorrents(cache, false)
 	for {
 		select {
 		case <-ticker.C:
-			t.fetchTorrents(cache)
+			t.fetchTorrents(cache, true)
 		case <-t.ctx.Done():
 			return
 		}
@@ -58,7 +60,7 @@ func (t *Task) Start(ctx context.Context, cache *Cache) {
 }
 
 // fetchTorrents retrieves torrents via the appropriate RPC client.
-func (t *Task) fetchTorrents(cache *Cache) {
+func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 	client, err := t.createRpcClient()
 	if err != nil {
 		slog.Warn("Failed to create RPC client", "rpcType", t.ServerConfig.RpcType, "err", err)
@@ -76,13 +78,18 @@ func (t *Task) fetchTorrents(cache *Cache) {
 		if parser == nil {
 			continue
 		}
-		processedItems := cache.Get(feedUrl) // Items processed before
+		var processedItems map[string]int64
+		if ignoreProcessed {
+			processedItems = cache.Get(feedUrl) // Items processed before
+		}
 		newItems := parser.GetGUIDSet()
 
 		for _, item := range parser.Content.Items {
 			guid := html.UnescapeString(item.GUID)
-			if _, alreadyProcessed := processedItems[guid]; alreadyProcessed {
-				continue
+			if ignoreProcessed {
+				if _, alreadyProcessed := processedItems[guid]; alreadyProcessed {
+					continue
+				}
 			}
 			torrent := parser.ProcessFeedItem(item, infoHashMap)
 			if torrent == nil {
