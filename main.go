@@ -60,7 +60,6 @@ func main() {
 		if err != nil {
 			os.Exit(1)
 		}
-		defer cache.Flush()
 
 		tasks, err := LoadConfig(opt.Config)
 		if err != nil {
