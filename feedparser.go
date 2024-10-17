@@ -66,7 +66,7 @@ func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
 
 // ProcessFeedItem processes a single feed item to extract relevant torrent URLs.
 // It returns a TorrentInfo object containing the URL and related info hashes.
-func (f *Feed) ProcessFeedItem(item *gofeed.Item, infoHashSet map[string]int64) *TorrentInfo {
+func (f *Feed) ProcessFeedItem(item *gofeed.Item, ignoredInfoHashSet map[string]struct{}) *TorrentInfo {
 	// Apply include and exclude filters on the title
 	cc, _ := gocc.New("t2s") // Convert Traditional Chinese to Simplified Chinese
 	var title string
@@ -100,7 +100,7 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, infoHashSet map[string]int64) 
 				slog.Warn("Matched infoHash not valid", "error", err)
 				continue
 			}
-			if _, exists := infoHashSet[infoHash]; exists {
+			if _, exists := ignoredInfoHashSet[infoHash]; exists {
 				continue
 			}
 			url := "magnet:?xt=" + btihPrefix + infoHash
@@ -126,7 +126,7 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, infoHashSet map[string]int64) 
 			}
 			for _, infoHash := range infoHashes {
 				// Add to download link list if at least one infoHash hasn't been downloaded.
-				if _, exists := infoHashSet[infoHash]; !exists {
+				if _, exists := ignoredInfoHashSet[infoHash]; !exists {
 					slog.Info("Added URL", "url", enclosureURL)
 					return &TorrentInfo{URL: enclosureURL, InfoHashes: infoHashes}
 				}
@@ -167,10 +167,10 @@ func (f *Feed) RemoveExpiredItems(cache *Cache) {
 }
 
 // GetGUIDSet creates a set of feed GUIDs.
-func (f *Feed) GetGUIDSet() map[string]int64 {
-	feedGUIDs := make(map[string]int64, len(f.Content.Items))
+func (f *Feed) GetGUIDSet() map[string][]string {
+	feedGUIDs := make(map[string][]string, len(f.Content.Items))
 	for _, item := range f.Content.Items {
-		feedGUIDs[html.UnescapeString(item.GUID)] = 0
+		feedGUIDs[html.UnescapeString(item.GUID)] = nil
 	}
 	return feedGUIDs
 }

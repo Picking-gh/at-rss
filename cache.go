@@ -7,36 +7,33 @@
 package main
 
 import (
-	"context"
 	"encoding/gob"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 )
 
 const cacheFileName = ".cache/at-rss.gob"
 
 // Cache manages the storage and retrieval of RSS feed items.
-// The `data` map contains feed URLs as keys, each associated with a map of GUIDs (Globally Unique Identifiers) and their UNIX timestamps.
-// Additionally, there is a special "infoHash" key with a map that tracks the btih (info hash) and its addition time.
+// The `data` map contains feed URLs as keys, each associated with a map of GUIDs (Globally Unique Identifiers) and their torrent infoHashes if added to rpc client.
 // The `filePath` stores the location for saving or loading the cache data.
 type Cache struct {
 	mu       sync.RWMutex
-	data     map[string]map[string]int64 // inner map value is a UNIX timestamp
+	data     map[string]map[string][]string // inner map value is a slice of added torrent infoHashes
 	filePath string
 }
 
 // NewCache initializes and returns a Cache instance.
-func NewCache(ctx context.Context) (*Cache, error) {
+func NewCache() (*Cache, error) {
 	cache := &Cache{
-		data: make(map[string]map[string]int64),
+		data: make(map[string]map[string][]string),
 	}
 
-	// "infoHash" map keeps btih added for 1 day
-	cache.data["infoHash"] = make(map[string]int64)
-	go cache.startCleanupScheduler(ctx, "infoHash")
+	// // "infoHash" map keeps btih added for 1 day
+	// cache.data["infoHash"] = make(map[string]int64)
+	// go cache.startCleanupScheduler(ctx, "infoHash")
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -53,22 +50,22 @@ func NewCache(ctx context.Context) (*Cache, error) {
 }
 
 // Get returns a copy of the map associated with the given key or an empty map if the key doesn't exist.
-func (c *Cache) Get(key string) map[string]int64 {
+func (c *Cache) Get(key string) map[string][]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	if value, exists := c.data[key]; exists {
-		copiedValue := make(map[string]int64)
+		copiedValue := make(map[string][]string)
 		for k, v := range value {
 			copiedValue[k] = v
 		}
 		return copiedValue
 	}
-	return make(map[string]int64)
+	return make(map[string][]string)
 }
 
-// Set stores the provided map under the specified key in the cache and timestamps the entries.
-func (c *Cache) Set(key string, value map[string]int64) {
+// Set stores the provided map under the specified key in the cache.
+func (c *Cache) Set(key string, value map[string][]string) {
 	if len(value) == 0 {
 		return
 	}
@@ -76,16 +73,16 @@ func (c *Cache) Set(key string, value map[string]int64) {
 	defer c.mu.Unlock()
 
 	if _, exists := c.data[key]; !exists {
-		c.data[key] = make(map[string]int64)
+		c.data[key] = make(map[string][]string)
 	}
-	for k := range value {
-		c.data[key][k] = time.Now().Unix()
+	for k, v := range value {
+		c.data[key][k] = v
 	}
 }
 
 // RemoveNotIn deletes entries from the cache that are not present in the provided map.
 // This function operates on the cache map associated with the specified key, usually a feed URL.
-func (c *Cache) RemoveNotIn(key string, validEntries map[string]int64) {
+func (c *Cache) RemoveNotIn(key string, validEntries map[string][]string) {
 	if len(validEntries) == 0 {
 		return
 	}
@@ -107,37 +104,37 @@ func (c *Cache) Flush() error {
 	return saveCache(c.filePath, c.data)
 }
 
-// cleanupExpiredEntries removes entries from the cache that are older than 24 hours.
-func (c *Cache) cleanupExpiredEntries(key string) {
-	expirationTime := time.Now().Add(-24 * time.Hour).Unix()
+// // cleanupExpiredEntries removes entries from the cache that are older than 24 hours.
+// func (c *Cache) cleanupExpiredEntries(key string) {
+// 	expirationTime := time.Now().Add(-24 * time.Hour).Unix()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// 	c.mu.Lock()
+// 	defer c.mu.Unlock()
 
-	if cacheSubMap, exists := c.data[key]; exists {
-		for k, timestamp := range cacheSubMap {
-			if timestamp < expirationTime {
-				delete(cacheSubMap, k)
-			}
-		}
-	}
-}
+// 	if cacheSubMap, exists := c.data[key]; exists {
+// 		for k, timestamp := range cacheSubMap {
+// 			if timestamp < expirationTime {
+// 				delete(cacheSubMap, k)
+// 			}
+// 		}
+// 	}
+// }
 
-// startCleanupScheduler initiates a cleanup task that runs every hour to remove expired entries.
-// The function stops when the context is cancelled.
-func (c *Cache) startCleanupScheduler(ctx context.Context, key string) {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
+// // startCleanupScheduler initiates a cleanup task that runs every hour to remove expired entries.
+// // The function stops when the context is cancelled.
+// func (c *Cache) startCleanupScheduler(ctx context.Context, key string) {
+// 	ticker := time.NewTicker(time.Hour)
+// 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			c.cleanupExpiredEntries(key)
-		}
-	}
-}
+// 	for {
+// 		select {
+// 		case <-ctx.Done():
+// 			return
+// 		case <-ticker.C:
+// 			c.cleanupExpiredEntries(key)
+// 		}
+// 	}
+// }
 
 // saveCache creates necessary directories and serializes the given object to a file using gob encoding.
 // It returns an error if directory creation or file writing fails.

@@ -44,6 +44,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Init cache for parsing torrent files
+	cache, err := NewCache()
+	if err != nil {
+		os.Exit(1)
+	}
+
 	// Handle termination signals
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -55,12 +61,6 @@ func main() {
 
 	// Function to manage tasks
 	at_rss := func(ctx context.Context) {
-		// Init cache for parsing torrent files
-		cache, err := NewCache(ctx)
-		if err != nil {
-			os.Exit(1)
-		}
-
 		tasks, err := LoadConfig(opt.Config)
 		if err != nil {
 			os.Exit(1)

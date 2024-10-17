@@ -71,14 +71,14 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 		client.CloseRpc()
 	}()
 
-	// infoHashMap keeps track of the hashes of magnet links added
-	infoHashMap := cache.Get("infoHash")
+	// infoHashSet keeps track of the hashes of magnet links added
+	infoHashSet := t.getAllInfoHashes(cache)
 	for _, feedUrl := range t.FeedUrls {
 		parser := NewFeedParser(t.ctx, feedUrl, t.parserConfig)
 		if parser == nil {
 			continue
 		}
-		var processedItems map[string]int64
+		var processedItems map[string][]string
 		if ignoreProcessed {
 			processedItems = cache.Get(feedUrl) // Items processed before
 		}
@@ -91,7 +91,7 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 					continue
 				}
 			}
-			torrent := parser.ProcessFeedItem(item, infoHashMap)
+			torrent := parser.ProcessFeedItem(item, infoHashSet)
 			if torrent == nil {
 				continue
 			}
@@ -103,14 +103,14 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
 				// Store added magnet links' infoHashes
 				for _, infoHash := range torrent.InfoHashes {
-					infoHashMap[infoHash] = time.Now().Unix()
+					infoHashSet[infoHash] = struct{}{}
 				}
+				newItems[guid] = torrent.InfoHashes
 			}
 		}
 		parser.RemoveExpiredItems(cache)
 		cache.Set(feedUrl, newItems)
 	}
-	cache.Set("infoHash", infoHashMap)
 	cache.Flush()
 }
 
@@ -129,4 +129,16 @@ func (t *Task) createRpcClient() (RpcClient, error) {
 	}
 
 	return client, err
+}
+
+func (t *Task) getAllInfoHashes(cache *Cache) map[string]struct{} {
+	infoHashSet := make(map[string]struct{})
+	for _, items := range cache.data {
+		for _, infoHashes := range items {
+			for _, infoHash := range infoHashes {
+				infoHashSet[infoHash] = struct{}{}
+			}
+		}
+	}
+	return infoHashSet
 }
