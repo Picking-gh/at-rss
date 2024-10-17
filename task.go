@@ -109,7 +109,7 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 			}
 		}
 		parser.RemoveExpiredItems(cache)
-		cache.Set(feedUrl, newItems)
+		cache.Set(feedUrl, newItems, false)
 	}
 	cache.Flush()
 }

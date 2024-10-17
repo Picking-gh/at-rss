@@ -7,14 +7,15 @@
 package main
 
 import (
-	"encoding/gob"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"gopkg.in/yaml.v3"
 )
 
-const cacheFileName = ".cache/at-rss.gob"
+const cacheFileName = ".cache/at-rss.yml"
 
 // Cache manages the storage and retrieval of RSS feed items.
 // The `data` map contains feed URLs as keys, each associated with a map of GUIDs (Globally Unique Identifiers) and their torrent infoHashes if added to rpc client.
@@ -65,7 +66,9 @@ func (c *Cache) Get(key string) map[string][]string {
 }
 
 // Set stores the provided map under the specified key in the cache.
-func (c *Cache) Set(key string, value map[string][]string) {
+// If 'overwrite' is false, it will only overwrite values when the existing slice is empty.
+// If 'overwrite' is true, it will always overwrite values.
+func (c *Cache) Set(key string, value map[string][]string, overwrite bool) {
 	if len(value) == 0 {
 		return
 	}
@@ -76,7 +79,13 @@ func (c *Cache) Set(key string, value map[string][]string) {
 		c.data[key] = make(map[string][]string)
 	}
 	for k, v := range value {
-		c.data[key][k] = v
+		if overwrite {
+			c.data[key][k] = v
+		} else {
+			if len(c.data[key][k]) == 0 {
+				c.data[key][k] = v
+			}
+		}
 	}
 }
 
@@ -151,7 +160,9 @@ func saveCache(filePath string, object interface{}) error {
 	}
 	defer file.Close()
 
-	return gob.NewEncoder(file).Encode(object)
+	encoder := yaml.NewEncoder(file)
+	defer encoder.Close()
+	return encoder.Encode(object)
 }
 
 // loadCache opens a file and deserializes its contents into the provided object using gob encoding.
@@ -163,5 +174,5 @@ func loadCache(filePath string, object interface{}) error {
 	}
 	defer file.Close()
 
-	return gob.NewDecoder(file).Decode(object)
+	return yaml.NewDecoder(file).Decode(object)
 }
