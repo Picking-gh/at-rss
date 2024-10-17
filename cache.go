@@ -32,10 +32,6 @@ func NewCache() (*Cache, error) {
 		data: make(map[string]map[string][]string),
 	}
 
-	// // "infoHash" map keeps btih added for 1 day
-	// cache.data["infoHash"] = make(map[string]int64)
-	// go cache.startCleanupScheduler(ctx, "infoHash")
-
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		slog.Error("Failed to locate user's home directory.", "err", err)
@@ -112,38 +108,6 @@ func (c *Cache) Flush() error {
 	defer c.mu.Unlock()
 	return saveCache(c.filePath, c.data)
 }
-
-// // cleanupExpiredEntries removes entries from the cache that are older than 24 hours.
-// func (c *Cache) cleanupExpiredEntries(key string) {
-// 	expirationTime := time.Now().Add(-24 * time.Hour).Unix()
-
-// 	c.mu.Lock()
-// 	defer c.mu.Unlock()
-
-// 	if cacheSubMap, exists := c.data[key]; exists {
-// 		for k, timestamp := range cacheSubMap {
-// 			if timestamp < expirationTime {
-// 				delete(cacheSubMap, k)
-// 			}
-// 		}
-// 	}
-// }
-
-// // startCleanupScheduler initiates a cleanup task that runs every hour to remove expired entries.
-// // The function stops when the context is cancelled.
-// func (c *Cache) startCleanupScheduler(ctx context.Context, key string) {
-// 	ticker := time.NewTicker(time.Hour)
-// 	defer ticker.Stop()
-
-// 	for {
-// 		select {
-// 		case <-ctx.Done():
-// 			return
-// 		case <-ticker.C:
-// 			c.cleanupExpiredEntries(key)
-// 		}
-// 	}
-// }
 
 // saveCache creates necessary directories and serializes the given object to a file using gob encoding.
 // It returns an error if directory creation or file writing fails.
