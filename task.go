@@ -39,7 +39,13 @@ type RpcClient interface {
 	CloseRpc()
 }
 
-// Start begins executing the task at regular intervals.
+// Start begins executing the task at regular intervals defined by FetchInterval.
+// It runs an initial fetch immediately, then continues fetching at each interval.
+// Parameters:
+//   - ctx: Context for cancellation and timeout
+//   - cache: Cache instance for tracking processed items
+//
+// The function will exit when the context is cancelled.
 func (t *Task) Start(ctx context.Context, cache *Cache) {
 	ticker := time.NewTicker(t.FetchInterval)
 	defer ticker.Stop()
@@ -63,7 +69,7 @@ func (t *Task) Start(ctx context.Context, cache *Cache) {
 func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 	client, err := t.createRpcClient()
 	if err != nil {
-		slog.Warn("Failed to create RPC client", "rpcType", t.ServerConfig.RpcType, "err", err)
+		slog.Warn("Failed to create RPC client", "type", t.ServerConfig.RpcType, "error", err)
 		return
 	}
 	defer func() {

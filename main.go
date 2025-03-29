@@ -35,19 +35,21 @@ func main() {
 	// Init watcher for reload configure files
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		os.Exit(1)
+		slog.Error("Failed to create file watcher", "error", err)
+		return
 	}
 	defer watcher.Close()
 	err = watcher.Add(opt.Config)
 	if err != nil {
-		slog.Error("Can't watch configure file.")
-		os.Exit(1)
+		slog.Error("Can't watch configure file", "error", err)
+		return
 	}
 
 	// Init cache for parsing torrent files
 	cache, err := NewCache()
 	if err != nil {
-		os.Exit(1)
+		slog.Error("Failed to initialize cache", "error", err)
+		return
 	}
 
 	// Handle termination signals
@@ -60,13 +62,15 @@ func main() {
 	defer cancel()
 
 	// Function to manage tasks
-	at_rss := func(ctx context.Context) {
+	atRSS := func(ctx context.Context) error {
 		tasks, err := LoadConfig(opt.Config)
 		if err != nil {
-			os.Exit(1)
+			slog.Error("Failed to load config", "error", err)
+			return err
 		}
 		if len(*tasks) == 0 {
-			slog.Warn("No task is running.")
+			slog.Warn("No task is running")
+			return nil
 		}
 		// Start tasks in separate goroutines
 		for _, task := range *tasks {
@@ -77,8 +81,11 @@ func main() {
 			}(task)
 			time.Sleep(5 * time.Second) // Optional delay between starting tasks
 		}
+		return nil
 	}
-	at_rss(ctx)
+	if err := atRSS(ctx); err != nil {
+		return
+	}
 
 	var debounceTimer *time.Timer
 	debounceDuration := 5 * time.Second
@@ -90,7 +97,7 @@ func main() {
 			return
 		case event, ok := <-watcher.Events: // reload configure file when changed
 			if !ok {
-				slog.Error("Configure file watching error", "error:", err)
+				slog.Error("Configure file watching error", "error", err)
 				return
 			}
 			if event.Has(fsnotify.Write) {
@@ -101,7 +108,10 @@ func main() {
 						cancel()
 						wg.Wait()
 						ctx, cancel = context.WithCancel(context.Background())
-						at_rss(ctx)
+						if err := atRSS(ctx); err != nil {
+							slog.Error("Failed to reload config", "error", err)
+							return
+						}
 						debounceTimer = nil
 						slog.Info("Configure file reloaded.")
 					})
