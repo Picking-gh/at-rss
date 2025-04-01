@@ -7,10 +7,13 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
@@ -34,29 +37,31 @@ func NewCache() (*Cache, error) {
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		slog.Error("Failed to locate user's home directory.", "err", err)
-		return nil, err
+		return nil, fmt.Errorf("获取用户主目录失败: %w", err)
 	}
 	cache.filePath = filepath.Join(homeDir, cacheFileName)
 
 	if err := loadCache(cache.filePath, &cache.data); err != nil {
-		slog.Warn("Failed to load cache, initializing empty cache.", "err", err)
+		slog.Warn("缓存加载失败，将初始化空缓存", "err", err)
 	}
 
 	return cache, nil
 }
 
-// Get returns a copy of the map associated with the given key or an empty map if the key doesn't exist.
+// Get returns a copy of non-empty entries from the map associated with the given key
+// or an empty map if the key doesn't exist.
 func (c *Cache) Get(key string) map[string][]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	if value, exists := c.data[key]; exists {
-		copiedValue := make(map[string][]string)
+		result := make(map[string][]string, len(value))
 		for k, v := range value {
-			copiedValue[k] = v
+			if len(v) > 0 {
+				result[k] = slices.Clone(v)
+			}
 		}
-		return copiedValue
+		return result
 	}
 	return make(map[string][]string)
 }
@@ -109,32 +114,43 @@ func (c *Cache) Flush() error {
 	return saveCache(c.filePath, c.data)
 }
 
-// saveCache creates necessary directories and serializes the given object to a file using gob encoding.
-// It returns an error if directory creation or file writing fails.
+// saveCache creates necessary directories and serializes the given object to a file using yaml encoding
+// with atomic write operation to prevent data corruption.
 func saveCache(filePath string, object interface{}) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0744); err != nil {
-		slog.Warn("Failed to create directory for cache file.", "err", err)
-		return err
+		return fmt.Errorf("创建缓存目录失败: %w", err)
 	}
 
-	file, err := os.Create(filePath)
+	tmpPath := filePath + ".tmp"
+	file, err := os.Create(tmpPath)
 	if err != nil {
-		slog.Warn("Failed to write cache to disk. May download duplicate files.", "err", err)
-		return err
+		return fmt.Errorf("创建临时文件失败: %w", err)
 	}
-	defer file.Close()
+	defer os.Remove(tmpPath)
 
-	encoder := yaml.NewEncoder(file)
-	defer encoder.Close()
-	return encoder.Encode(object)
+	enc := yaml.NewEncoder(file)
+	if err := enc.Encode(object); err != nil {
+		return fmt.Errorf("YAML编码失败: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("关闭临时文件失败: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		return fmt.Errorf("原子重命名失败: %w", err)
+	}
+	return nil
 }
 
-// loadCache opens a file and deserializes its contents into the provided object using gob encoding.
-// Returns an error if the file cannot be opened or if decoding fails.
+// loadCache opens a file and deserializes its contents into the provided object using yaml encoding.
+// Returns nil if file doesn't exist, error for other failures.
 func loadCache(filePath string, object interface{}) error {
 	file, err := os.Open(filePath)
+	if os.IsNotExist(err) {
+		return nil // 文件不存在不算错误
+	}
 	if err != nil {
-		return err
+		return fmt.Errorf("打开缓存文件失败: %w", err)
 	}
 	defer file.Close()
 
