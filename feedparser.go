@@ -85,7 +85,7 @@ func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
 
 // ProcessFeedItem processes a single feed item to extract relevant torrent URLs.
 // It returns a TorrentInfo object containing the URL and related info hashes.
-func (f *Feed) ProcessFeedItem(item *gofeed.Item, ignoredInfoHashSet map[string]struct{}) *TorrentInfo {
+func (f *Feed) ProcessFeedItem(item *gofeed.Item, isInfoHashIgnored func(string) bool) *TorrentInfo {
 	// Apply include and exclude filters on the title
 	var title string
 	rawTitle := html.UnescapeString(item.Title)
@@ -118,7 +118,7 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, ignoredInfoHashSet map[string]
 				slog.Warn("Matched infoHash not valid", "error", err)
 				continue
 			}
-			if _, exists := ignoredInfoHashSet[infoHash]; exists {
+			if isInfoHashIgnored(infoHash) {
 				continue
 			}
 			url := "magnet:?xt=" + btihPrefix + infoHash
@@ -141,7 +141,7 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, ignoredInfoHashSet map[string]
 			}
 			for _, infoHash := range infoHashes {
 				// Add to download link list if at least one infoHash hasn't been downloaded.
-				if _, exists := ignoredInfoHashSet[infoHash]; !exists {
+				if !isInfoHashIgnored(infoHash) {
 					slog.Info("Added URL", "url", enclosureURL)
 					return &TorrentInfo{URL: enclosureURL, InfoHashes: infoHashes}
 				}

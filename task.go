@@ -65,12 +65,31 @@ func (t *Task) Start(ctx context.Context, cache *Cache) {
 	}
 }
 
-// fetchTorrents retrieves torrents via the appropriate RPC client.
+// fetchTorrents retrieves torrents via the appropriate RPC client with retry mechanism.
 func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
+	const maxRetries = 3
+	var lastErr error
+
+	for i := range maxRetries {
+		if err := t.doFetchTorrents(cache, ignoreProcessed); err != nil {
+			lastErr = err
+			time.Sleep(time.Second * time.Duration(i+1))
+			continue
+		}
+		return
+	}
+
+	slog.Error("Failed to fetch torrents after retries",
+		"retries", maxRetries,
+		"error", lastErr)
+}
+
+// doFetchTorrents contains the actual fetch logic
+func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 	client, err := t.createRpcClient()
 	if err != nil {
 		slog.Warn("Failed to create RPC client", "type", t.ServerConfig.RpcType, "error", err)
-		return
+		return err
 	}
 	defer func() {
 		client.CleanUp()
@@ -97,20 +116,19 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 					continue
 				}
 			}
-			torrent := parser.ProcessFeedItem(item, infoHashSet)
+			torrent := parser.ProcessFeedItem(item, infoHashSet.contains)
 			if torrent == nil {
 				continue
 			}
 			if err := client.AddTorrent(torrent.URL); err != nil {
 				// Mark item as unprocessed if it fails to add, so it's retried in the next fetchTorrents call
-				slog.Warn("Failed to add torrent", "URL", torrent.URL, "err", err)
+				slog.Error("Failed to add torrent",
+					"URL", torrent.URL,
+					"error", err)
 				delete(newItems, guid)
 			} else {
 				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
-				// Store added magnet links' infoHashes
-				for _, infoHash := range torrent.InfoHashes {
-					infoHashSet[infoHash] = struct{}{}
-				}
+				infoHashSet.add(torrent.InfoHashes)
 				newItems[guid] = torrent.InfoHashes
 			}
 		}
@@ -118,6 +136,7 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 		cache.Set(feedUrl, newItems, false)
 	}
 	cache.Flush()
+	return nil
 }
 
 // createRpcClient initializes the appropriate RPC client based on RpcType.
@@ -137,8 +156,11 @@ func (t *Task) createRpcClient() (RpcClient, error) {
 	return client, err
 }
 
-func (t *Task) getAllInfoHashes(cache *Cache) map[string]struct{} {
-	infoHashSet := make(map[string]struct{})
+// infoHashSet is a memory-efficient set implementation for info hashes
+type infoHashSet map[string]struct{}
+
+func (t *Task) getAllInfoHashes(cache *Cache) infoHashSet {
+	infoHashSet := make(infoHashSet)
 	for _, items := range cache.data {
 		for _, infoHashes := range items {
 			for _, infoHash := range infoHashes {
@@ -147,4 +169,17 @@ func (t *Task) getAllInfoHashes(cache *Cache) map[string]struct{} {
 		}
 	}
 	return infoHashSet
+}
+
+// add adds info hashes to the set
+func (s infoHashSet) add(hashes []string) {
+	for _, h := range hashes {
+		s[h] = struct{}{}
+	}
+}
+
+// contains checks if a hash exists in the set
+func (s infoHashSet) contains(hash string) bool {
+	_, ok := s[hash]
+	return ok
 }
