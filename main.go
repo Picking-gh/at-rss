@@ -68,12 +68,12 @@ func main() {
 			slog.Error("Failed to load config", "error", err)
 			return err
 		}
-		if len(*tasks) == 0 {
+		if len(tasks) == 0 {
 			slog.Warn("No task is running")
 			return nil
 		}
 		// Start tasks in separate goroutines
-		for _, task := range *tasks {
+		for _, task := range tasks {
 			wg.Add(1)
 			go func(task *Task) {
 				defer wg.Done()

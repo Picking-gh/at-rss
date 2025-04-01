@@ -19,6 +19,119 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config represents the top-level configuration structure
+type Config struct {
+	Tasks map[string]TaskConfig
+}
+
+// UnmarshalYAML implements custom unmarshaling to support key-value task format
+func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
+	var rawMap map[string]any
+	if err := unmarshal(&rawMap); err != nil {
+		return err
+	}
+
+	c.Tasks = make(map[string]TaskConfig)
+	for name, value := range rawMap {
+		var task TaskConfig
+		task.Name = name
+
+		// Convert raw interface{} to YAML bytes for TaskConfig parsing
+		taskBytes, err := yaml.Marshal(value)
+		if err != nil {
+			return err
+		}
+
+		if err := yaml.Unmarshal(taskBytes, &task); err != nil {
+			return fmt.Errorf("failed to parse task %s: %w", name, err)
+		}
+
+		// Perform basic validation during unmarshaling
+		if task.Aria2c != nil && task.Transmission != nil {
+			return fmt.Errorf("task %s: cannot specify both aria2c and transmission", name)
+		}
+		if task.Aria2c == nil && task.Transmission == nil {
+			return fmt.Errorf("task %s: must specify either aria2c or transmission", name)
+		}
+		if len(task.Feed.URLs) == 0 {
+			return fmt.Errorf("task %s: must specify at least one feed URL", name)
+		}
+
+		c.Tasks[name] = task
+	}
+
+	return nil
+}
+
+// TaskConfig represents a single task configuration
+type TaskConfig struct {
+	Name         string              `yaml:"name,omitempty"`
+	Aria2c       *Aria2cConfig       `yaml:"aria2c,omitempty"`
+	Transmission *TransmissionConfig `yaml:"transmission,omitempty"`
+	Feed         FeedConfig          `yaml:"feed"`
+	Filter       *FilterConfig       `yaml:"filter,omitempty"`
+	Extracter    *ExtracterConfig    `yaml:"extracter,omitempty"`
+	Interval     int                 `yaml:"interval,omitempty"`
+}
+
+// Aria2cConfig represents aria2c RPC configuration
+type Aria2cConfig struct {
+	URL   string `yaml:"url"`
+	Token string `yaml:"token,omitempty"`
+}
+
+// TransmissionConfig represents transmission RPC configuration
+type TransmissionConfig struct {
+	Host     string `yaml:"host"`
+	Port     uint16 `yaml:"port"`
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
+}
+
+// FeedConfig represents feed URL configuration (supports single or multiple URLs)
+type FeedConfig struct {
+	URLs []string `yaml:"urls"`
+}
+
+// UnmarshalYAML implements custom unmarshaling to support both string and []string
+func (f *FeedConfig) UnmarshalYAML(unmarshal func(any) error) error {
+	// First try to unmarshal as single string
+	var singleURL string
+	if err := unmarshal(&singleURL); err == nil {
+		f.URLs = []string{singleURL}
+		return nil
+	}
+
+	// Then try to unmarshal as string slice
+	var multiURLs []string
+	if err := unmarshal(&multiURLs); err == nil {
+		f.URLs = multiURLs
+		return nil
+	}
+
+	// Finally try the original struct format
+	var aux struct {
+		URLs []string `yaml:"urls"`
+	}
+	if err := unmarshal(&aux); err != nil {
+		return err
+	}
+	f.URLs = aux.URLs
+	return nil
+}
+
+// FilterConfig represents content filter configuration
+type FilterConfig struct {
+	Include []string `yaml:"include,omitempty"`
+	Exclude []string `yaml:"exclude,omitempty"`
+}
+
+// ExtracterConfig represents extraction configuration
+type ExtracterConfig struct {
+	Tag     string `yaml:"tag"`
+	Pattern string `yaml:"pattern"`
+}
+
 const (
 	defaultAria2cRpcUrl        = "ws://localhost:6800/jsonrpc"
 	defaultTransmissionRpcHost = "localhost"
@@ -30,191 +143,150 @@ var validTags = map[string]struct{}{
 	"title": {}, "link": {}, "description": {}, "enclosure": {}, "guid": {},
 }
 
-type Tasks []*Task
-
-// LoadConfig returns a Tasks object based on the given filename.
-func LoadConfig(filename string) (*Tasks, error) {
+// LoadConfig loads and validates the configuration from YAML file
+func LoadConfig(filename string) ([]*Task, error) {
 	config, err := loadYAMLConfig(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// The filtering criteria ignore the distinction between traditional and simplified Chinese,
-	// so here the Include and Exclude keywords are converted to simplified Chinese.
-	cc, err := gocc.New("t2s") // "t2s" traditional Chinese -> simplified Chinese
+	cc, err := gocc.New("t2s")
 	if err != nil {
-		slog.Warn("Failed to initialize Chinese converter.", "err", err)
+		slog.Warn("Failed to initialize Chinese converter", "err", err)
 	}
 
-	tasks := Tasks{}
-	for _, value := range config {
-		task, ok := value.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		taskObj, err := parseTask(task, cc)
+	var tasks []*Task
+	for _, taskConfig := range config.Tasks {
+		task, err := parseTask(taskConfig, cc)
 		if err != nil {
-			slog.Error("Configuration file error.", "err", err)
-			return nil, err
+			return nil, fmt.Errorf("invalid task configuration: %w", err)
 		}
-
-		tasks = append(tasks, taskObj)
+		tasks = append(tasks, task)
 	}
-	return &tasks, nil
+
+	if len(tasks) == 0 {
+		return nil, errors.New("no valid tasks found in configuration")
+	}
+
+	return tasks, nil
 }
 
-// loadYAMLConfig reads and unmarshals a YAML configuration file.
-func loadYAMLConfig(filename string) (map[string]interface{}, error) {
+// loadYAMLConfig reads and unmarshals the YAML configuration file
+func loadYAMLConfig(filename string) (*Config, error) {
 	source, err := os.ReadFile(filename)
 	if err != nil {
-		slog.Error("Failed to read config file.", "err", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	var config map[string]interface{}
+	var config Config
 	if err := yaml.Unmarshal(source, &config); err != nil {
-		slog.Error("Failed to unmarshal config file.", "err", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to parse YAML config: %w", err)
 	}
 
-	return config, nil
+	return &config, nil
 }
 
-// parseTask processes each task in the configuration.
-func parseTask(task map[string]interface{}, cc *gocc.OpenCC) (*Task, error) {
-	_, hasAria2c := task["aria2c"]
-	_, hasTransmission := task["transmission"]
-
-	if hasAria2c && hasTransmission {
-		return nil, errors.New("both aria2c and transmission RPC servers specified; only one allowed")
-	} else if !hasAria2c && !hasTransmission {
-		return nil, errors.New("neither aria2c nor transmission RPC server specified")
+// parseTask converts TaskConfig to Task
+func parseTask(config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
+	// Set default interval if not specified
+	if config.Interval <= 0 {
+		config.Interval = defaultFetchInterval
 	}
 
-	if _, hasFeed := task["feed"]; !hasFeed {
-		return nil, errors.New("feed section missing")
+	task := &Task{
+		parserConfig:  &ParserConfig{},
+		FeedUrls:      config.Feed.URLs,
+		FetchInterval: time.Duration(config.Interval) * time.Minute,
 	}
 
-	t := &Task{parserConfig: &ParserConfig{}, FetchInterval: defaultFetchInterval * time.Minute}
+	// Parse RPC configuration
+	if config.Aria2c != nil {
+		parseAria2cConfig(task, config.Aria2c)
+	} else {
+		parseTransmissionConfig(task, config.Transmission)
+	}
 
-	for k, v := range task {
-		switch strings.ToLower(k) {
-		case "aria2c":
-			parseAria2cConfig(t, v)
-		case "transmission":
-			parseTransmissionConfig(t, v)
-		case "feed":
-			if urls := parseFeedsConfig(v); urls == nil {
-				return nil, errors.New("feed URL missing or contains non url")
-			} else {
-				t.FeedUrls = urls
-			}
-		case "interval":
-			t.FetchInterval = time.Duration(getIntOrDefault(v, defaultFetchInterval)) * time.Minute
-		case "filter":
-			parseFilterConfig(t, v, cc)
-		case "extracter":
-			if err := parseExtracterConfig(t, v); err != nil {
-				return nil, err
-			}
+	// Parse filter if specified
+	if config.Filter != nil {
+		parseFilterConfig(task, config.Filter, cc)
+	}
+
+	// Parse extracter if specified
+	if config.Extracter != nil {
+		if err := parseExtracterConfig(task, config.Extracter); err != nil {
+			return nil, err
 		}
 	}
 
-	return t, nil
+	return task, nil
 }
 
-// parseAria2cConfig processes the aria2c configuration.
-func parseAria2cConfig(t *Task, v interface{}) {
-	server, ok := v.(map[string]interface{})
-	if !ok || server == nil {
-		t.ServerConfig.Url = defaultAria2cRpcUrl
-	} else {
-		t.ServerConfig.Url = getStringOrDefault(server["url"], defaultAria2cRpcUrl)
-		t.ServerConfig.Token = convertToString(server["token"])
-	}
+// parseAria2cConfig processes the aria2c configuration
+func parseAria2cConfig(t *Task, cfg *Aria2cConfig) {
 	t.ServerConfig.RpcType = "aria2c"
+	t.ServerConfig.Url = cfg.URL
+	if t.ServerConfig.Url == "" {
+		t.ServerConfig.Url = defaultAria2cRpcUrl
+	}
+	t.ServerConfig.Token = cfg.Token
 }
 
-// parseTransmissionConfig processes the transmission configuration.
-func parseTransmissionConfig(t *Task, v interface{}) {
-	server, ok := v.(map[string]interface{})
-	if !ok || server == nil {
-		t.ServerConfig.Host = defaultTransmissionRpcHost
-		t.ServerConfig.Port = defaultTransmissionRpcPort
-	} else {
-		t.ServerConfig.Host = getStringOrDefault(server["host"], defaultTransmissionRpcHost)
-		t.ServerConfig.Port = uint16(getIntOrDefault(server["port"], defaultTransmissionRpcPort))
-		t.ServerConfig.Username = convertToString(server["username"])
-		t.ServerConfig.Password = convertToString(server["password"])
-	}
+// parseTransmissionConfig processes the transmission configuration
+func parseTransmissionConfig(t *Task, cfg *TransmissionConfig) {
 	t.ServerConfig.RpcType = "transmission"
+	t.ServerConfig.Host = cfg.Host
+	if t.ServerConfig.Host == "" {
+		t.ServerConfig.Host = defaultTransmissionRpcHost
+	}
+	t.ServerConfig.Port = cfg.Port
+	if t.ServerConfig.Port == 0 {
+		t.ServerConfig.Port = defaultTransmissionRpcPort
+	}
+	t.ServerConfig.Username = cfg.Username
+	t.ServerConfig.Password = cfg.Password
 }
 
-// parseFeedConfig processes the feed configuration.
-func parseFeedsConfig(v interface{}) []string {
-	var urls []string
-	switch v := v.(type) {
-	case []interface{}:
-		urls = make([]string, len(v))
-		for i, item := range v {
-			if url, ok := item.(string); ok {
-				urls[i] = url
-			} else {
-				return nil
-			}
-		}
-	case string:
-		urls = []string{v}
+// parseFilterConfig processes the filter configuration
+func parseFilterConfig(t *Task, cfg *FilterConfig, cc *gocc.OpenCC) {
+	if cfg == nil {
+		return
 	}
-	return urls
+
+	t.parserConfig.Include = normalizeAndSimplifyTexts(cc, cfg.Include)
+	t.parserConfig.Exclude = normalizeAndSimplifyTexts(cc, cfg.Exclude)
 }
 
-// parseFilterConfig processes the filter configuration.
-func parseFilterConfig(t *Task, v interface{}, cc *gocc.OpenCC) {
-	if rawMap, ok := v.(map[string]interface{}); ok {
-		filter := convertToStringSliceMap(rawMap)
-		t.parserConfig.Include = normalizeAndSimplifyTexts(cc, filter["include"])
-		t.parserConfig.Exclude = normalizeAndSimplifyTexts(cc, filter["exclude"])
-	}
-}
-
-// parseExtracterConfig processes and validates the extracter configuration.
-func parseExtracterConfig(t *Task, v interface{}) error {
-	extract, ok := v.(map[string]interface{})
-	if !ok {
-		return errors.New("invalid 'extracter'")
+// parseExtracterConfig processes and validates the extracter configuration
+func parseExtracterConfig(t *Task, cfg *ExtracterConfig) error {
+	if cfg == nil {
+		return nil
 	}
 
-	tag, tagOk := extract["tag"].(string)
-	if !tagOk || tag == "" {
-		return errors.New("missing 'tag' in extracter")
-	}
-	tag = strings.ToLower(tag)
+	// Validate tag
+	tag := strings.ToLower(cfg.Tag)
 	if _, valid := validTags[tag]; !valid {
-		return errors.New("invalid 'tag': " + tag + " in extracter")
+		return fmt.Errorf("invalid extracter tag: %s", tag)
 	}
 	t.parserConfig.Tag = tag
 
-	pattern, patternOk := extract["pattern"].(string)
-	if !patternOk || pattern == "" {
-		return errors.New("missing 'pattern' in extracter")
+	// Validate and compile pattern
+	if cfg.Pattern == "" {
+		return errors.New("extracter pattern cannot be empty")
 	}
-	r, err := regexp.Compile(pattern)
+	r, err := regexp.Compile(cfg.Pattern)
 	if err != nil {
-		return errors.New("invalid 'pattern': " + pattern + " in extracter")
+		return fmt.Errorf("invalid extracter pattern: %w", err)
 	}
-	t.parserConfig.Pattern = pattern
+	t.parserConfig.Pattern = cfg.Pattern
 	t.parserConfig.r = r
-
 	t.parserConfig.Trick = true
 
 	return nil
 }
 
-// normalizeAndSimplifyTexts converts given []string to lowercase and applies Chinese simplification if needed.
+// normalizeAndSimplifyTexts converts given []string to lowercase and applies Chinese simplification if needed
 func normalizeAndSimplifyTexts(cc *gocc.OpenCC, texts []string) []string {
-	if cc == nil {
+	if cc == nil || len(texts) == 0 {
 		return texts
 	}
 
@@ -229,54 +301,4 @@ func normalizeAndSimplifyTexts(cc *gocc.OpenCC, texts []string) []string {
 		}
 	}
 	return simplified
-}
-
-// convertToString converts a interface{} to string as much as possible.
-func convertToString(m interface{}) string {
-	switch v := m.(type) {
-	case string:
-		return v
-	case int, int64, float64, bool:
-		return fmt.Sprintf("%v", v)
-	default:
-		return ""
-	}
-}
-
-// convertToStringSliceMap converts a map with interface{} values into a map with string slices.
-func convertToStringSliceMap(rawMap map[string]interface{}) map[string][]string {
-	result := make(map[string][]string)
-	for key, value := range rawMap {
-		if slice, ok := value.([]interface{}); ok {
-			strSlice := make([]string, len(slice))
-			i := 0
-			for _, item := range slice {
-				if str := convertToString(item); len(str) > 0 {
-					strSlice[i] = str
-					i++
-				}
-			}
-			result[key] = strSlice
-		} else if str, ok := value.(string); ok {
-			result[key] = []string{str}
-		}
-	}
-	return result
-}
-
-// getStringOrDefault tries to get a string from a interface or returns a default value.
-func getStringOrDefault(v interface{}, defaultValue string) string {
-	value, ok := v.(string)
-	if !ok || value == "" {
-		return defaultValue
-	}
-	return value
-}
-
-// getIntOrDefault tries to get an integer from a interface or returns a default value.
-func getIntOrDefault(v interface{}, defaultValue int) int {
-	if value, ok := v.(int); ok && value > 0 {
-		return value
-	}
-	return defaultValue
 }
