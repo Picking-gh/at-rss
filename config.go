@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -194,7 +193,7 @@ func parseTask(config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
 	}
 
 	task := &Task{
-		parserConfig:  &ParserConfig{},
+		parserConfig:  &ParserConfig{}, // Will be properly initialized in parseExtracterConfig
 		FeedUrls:      config.Feed.URLs,
 		FetchInterval: time.Duration(config.Interval) * time.Minute,
 	}
@@ -267,20 +266,20 @@ func parseExtracterConfig(t *Task, cfg *ExtracterConfig) error {
 	if _, valid := validTags[tag]; !valid {
 		return fmt.Errorf("invalid extracter tag: %s", tag)
 	}
-	t.parserConfig.Tag = tag
 
-	// Validate and compile pattern
+	// Validate pattern
 	if cfg.Pattern == "" {
 		return errors.New("extracter pattern cannot be empty")
 	}
-	r, err := regexp.Compile(cfg.Pattern)
-	if err != nil {
-		return fmt.Errorf("invalid extracter pattern: %w", err)
-	}
-	t.parserConfig.Pattern = cfg.Pattern
-	t.parserConfig.r = r
-	t.parserConfig.Trick = true
 
+	// Create new parser config
+	pc, err := NewParserConfig(nil, nil, true, cfg.Pattern, tag)
+	if err != nil {
+		return fmt.Errorf("invalid extracter configuration: %w", err)
+	}
+
+	// Replace the parser config
+	t.parserConfig = pc
 	return nil
 }
 

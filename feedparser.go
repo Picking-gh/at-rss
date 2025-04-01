@@ -32,6 +32,7 @@ type Feed struct {
 	Content *gofeed.Feed
 	URL     string // Feed URL
 	ctx     context.Context
+	cc      *gocc.OpenCC // Cached Chinese converter
 }
 
 // ParserConfig holds the parameters read from the configuration file.
@@ -41,7 +42,23 @@ type ParserConfig struct {
 	Trick   bool // Whether to apply the extractor to reconstruct the magnet link
 	Pattern string
 	Tag     string
-	r       *regexp.Regexp
+	r       *regexp.Regexp // Pre-compiled regex
+}
+
+// NewParserConfig creates a new ParserConfig with pre-compiled regex
+func NewParserConfig(include, exclude []string, trick bool, pattern, tag string) (*ParserConfig, error) {
+	r, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	return &ParserConfig{
+		Include: include,
+		Exclude: exclude,
+		Trick:   trick,
+		Pattern: pattern,
+		Tag:     tag,
+		r:       r,
+	}, nil
 }
 
 // TorrentInfo represents a single torrent or magnet link found in a feed item.
@@ -61,19 +78,20 @@ func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
 		slog.Warn("Failed to fetch feed URL", "url", url, "error", err)
 		return nil
 	}
-	return &Feed{pc, contents, url, ctx}
+
+	cc, _ := gocc.New("t2s") // Initialize converter once
+	return &Feed{pc, contents, url, ctx, cc}
 }
 
 // ProcessFeedItem processes a single feed item to extract relevant torrent URLs.
 // It returns a TorrentInfo object containing the URL and related info hashes.
 func (f *Feed) ProcessFeedItem(item *gofeed.Item, ignoredInfoHashSet map[string]struct{}) *TorrentInfo {
 	// Apply include and exclude filters on the title
-	cc, _ := gocc.New("t2s") // Convert Traditional Chinese to Simplified Chinese
 	var title string
 	rawTitle := html.UnescapeString(item.Title)
-	if cc != nil {
+	if f.cc != nil {
 		var err error
-		title, err = cc.Convert(rawTitle)
+		title, err = f.cc.Convert(rawTitle)
 		if err != nil {
 			slog.Warn("Failed to convert title to simplified Chinese", "title", rawTitle, "error", err)
 			title = rawTitle
@@ -115,10 +133,7 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, ignoredInfoHashSet map[string]
 			// Prevent adding magnet links with duplicate infoHashes when processing multiple feeds.
 			// For non-magnet links, attempt to obtain the infoHash from the downloaded torrent file (supports HTTP only).
 			enclosureURL := html.UnescapeString(enclosure.URL)
-			infoHashes, err := parseMagnetURI(enclosureURL)
-			if err != nil {
-				infoHashes, _ = parseTorrentURIWithTimeout(f.ctx, enclosureURL)
-			}
+			infoHashes, _ := parseURI(f.ctx, enclosureURL)
 			// If any error occurs, infoHashes slice is empty. In this case, do not apply infoHash filter.
 			if len(infoHashes) == 0 {
 				slog.Info("Added URL", "url", enclosureURL)
@@ -138,27 +153,33 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, ignoredInfoHashSet map[string]
 
 // shouldSkipItem checks if an item should be skipped based on include and exclude filters.
 func (f *Feed) shouldSkipItem(title string) bool {
-	// Check if all exclude keywords are present; if so, skip the item
-	for _, excludeKeywords := range f.Exclude {
-		if allKeywordsMatch(title, excludeKeywords) {
+	if f.matchesExcludeFilters(title) {
+		return true
+	}
+	return !f.matchesIncludeFilters(title)
+}
+
+// matchesExcludeFilters checks if title matches any exclude filter
+func (f *Feed) matchesExcludeFilters(title string) bool {
+	for _, keywords := range f.Exclude {
+		if allKeywordsMatch(title, keywords) {
 			return true
 		}
 	}
+	return false
+}
 
-	// If there are no include keywords, do not skip the item
+// matchesIncludeFilters checks if title matches include filters
+func (f *Feed) matchesIncludeFilters(title string) bool {
 	if len(f.Include) == 0 {
-		return false
+		return true // No include filters means include all
 	}
-
-	// Check if all include keywords are present; if so, do not skip the item
-	for _, includeKeywords := range f.Include {
-		if allKeywordsMatch(title, includeKeywords) {
-			return false
+	for _, keywords := range f.Include {
+		if allKeywordsMatch(title, keywords) {
+			return true
 		}
 	}
-
-	// If none of the include keywords match, skip the item
-	return true
+	return false
 }
 
 // RemoveExpiredItems removes items from the cache that are not present in the feed.
@@ -208,15 +229,28 @@ func allKeywordsMatch(title, keywords string) bool {
 	return true
 }
 
-// parseMagnetURI parses a URI and returns all infohashes as hex strings if the URI is magnet-formatted.
-// If URI is not a magnet link or is not valid, returns an error.
-func parseMagnetURI(uri string) ([]string, error) {
+// parseURI parses a URI and returns all infohashes, handling both magnet and torrent URIs
+func parseURI(ctx context.Context, uri string) ([]string, error) {
 	u, err := url.Parse(uri)
 	if err != nil {
 		return nil, err
 	}
-	if u.Scheme != "magnet" {
-		return nil, errors.New("not a magnet link")
+
+	switch u.Scheme {
+	case "magnet":
+		return parseMagnetURI(uri)
+	case "http", "https":
+		return parseTorrentURI(ctx, uri)
+	default:
+		return nil, errors.New("unsupported URI scheme")
+	}
+}
+
+// parseMagnetURI extracts infohashes from magnet URI
+func parseMagnetURI(uri string) ([]string, error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return nil, err
 	}
 
 	q := u.Query()
@@ -239,6 +273,30 @@ func parseMagnetURI(uri string) ([]string, error) {
 	return hashes, nil
 }
 
+// parseTorrentURI downloads and parses torrent file to get infohash
+func parseTorrentURI(ctx context.Context, uri string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	metaInfo, err := metainfo.Load(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{metaInfo.HashInfoBytes().HexString()}, nil
+}
+
 // regulateInfoHash decodes the infoHash from the string and returns its hex representation.
 func regulateInfoHash(s string) (string, error) {
 	var decoded []byte
@@ -258,30 +316,4 @@ func regulateInfoHash(s string) (string, error) {
 	}
 
 	return hex.EncodeToString(decoded), nil
-}
-
-// parseTorrentURIWithTimeout downloads a torrent file from the specified URI using an HTTP GET request
-// with a context-based timeout. It parses the torrent file's metadata and returns the info hash as a hex string.
-// If the request fails or the torrent file cannot be parsed, it returns an error.
-func parseTorrentURIWithTimeout(ctx context.Context, uri string) ([]string, error) {
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctxWithTimeout, http.MethodGet, uri, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	metaInfo, err := metainfo.Load(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return []string{metaInfo.HashInfoBytes().HexString()}, nil
 }
