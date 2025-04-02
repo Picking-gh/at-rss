@@ -7,6 +7,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,11 +15,9 @@ import (
 	"sync"
 
 	"slices"
-
-	"gopkg.in/yaml.v3"
 )
 
-const cacheFileName = ".cache/at-rss.yml"
+const cacheFileName = ".cache/at-rss.json"
 
 // Cache manages the storage and retrieval of RSS feed items.
 // The `data` map contains feed URLs as keys, each associated with a map of GUIDs (Globally Unique Identifiers) and their torrent infoHashes if added to rpc client.
@@ -128,9 +127,11 @@ func saveCache(filePath string, object interface{}) error {
 	}
 	defer os.Remove(tmpPath)
 
-	enc := yaml.NewEncoder(file)
+	enc := json.NewEncoder(file)
+	// Use indentation for better readability
+	enc.SetIndent("", "  ")
 	if err := enc.Encode(object); err != nil {
-		return fmt.Errorf("YAML编码失败: %w", err)
+		return fmt.Errorf("JSON编码失败: %w", err)
 	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("关闭临时文件失败: %w", err)
@@ -154,5 +155,5 @@ func loadCache(filePath string, object interface{}) error {
 	}
 	defer file.Close()
 
-	return yaml.NewDecoder(file).Decode(object)
+	return json.NewDecoder(file).Decode(object)
 }
