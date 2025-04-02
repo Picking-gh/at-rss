@@ -43,12 +43,12 @@ func NewCache() (*Cache, error) {
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("获取用户主目录失败: %w", err)
+		return nil, fmt.Errorf("Failed to get user home directory: %w", err)
 	}
 	cache.filePath = filepath.Join(homeDir, cacheFileName)
 
 	if err := loadCache(cache.filePath, &cache.data); err != nil {
-		slog.Warn("缓存加载失败，将初始化空缓存", "err", err)
+		slog.Warn("Failed to load cache, will initialize empty cache", "err", err)
 	}
 
 	return cache, nil
@@ -189,13 +189,13 @@ func (c *Cache) Flush() error {
 // with atomic write operation to prevent data corruption.
 func saveCache(filePath string, object interface{}) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0744); err != nil {
-		return fmt.Errorf("创建缓存目录失败: %w", err)
+		return fmt.Errorf("Failed to create cache directory: %w", err)
 	}
 
 	tmpPath := filePath + ".tmp"
 	file, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("创建临时文件失败: %w", err)
+		return fmt.Errorf("Failed to create temporary file: %w", err)
 	}
 	defer os.Remove(tmpPath)
 
@@ -203,14 +203,14 @@ func saveCache(filePath string, object interface{}) error {
 	// Use indentation for better readability
 	enc.SetIndent("", " ")
 	if err := enc.Encode(object); err != nil {
-		return fmt.Errorf("JSON编码失败: %w", err)
+		return fmt.Errorf("JSON encoding failed: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("关闭临时文件失败: %w", err)
+		return fmt.Errorf("Failed to close temporary file: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, filePath); err != nil {
-		return fmt.Errorf("原子重命名失败: %w", err)
+		return fmt.Errorf("Atomic rename failed: %w", err)
 	}
 	return nil
 }
@@ -220,10 +220,10 @@ func saveCache(filePath string, object interface{}) error {
 func loadCache(filePath string, object interface{}) error {
 	file, err := os.Open(filePath)
 	if os.IsNotExist(err) {
-		return nil // 文件不存在不算错误
+		return nil // File not found is not considered an error
 	}
 	if err != nil {
-		return fmt.Errorf("打开缓存文件失败: %w", err)
+		return fmt.Errorf("Failed to open cache file: %w", err)
 	}
 	defer file.Close()
 

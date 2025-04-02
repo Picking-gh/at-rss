@@ -1,22 +1,77 @@
 # at-rss: A RSS Feed Parser for aria2c and transmission
 
-The origin of this project is that I couldn't compile FlexGet for my old ARMv7 development board, so I decided to create a simple replacement myself.
+A lightweight RSS feed parser that monitors RSS feeds and automatically downloads torrents via aria2c or transmission RPC.
 
-This project, named **at-rss** (covering both **aria2c-rss** and **transmission-rss**), is rebuilt from [transmission-rss](https://github.com/trishika/transmission-rss). It enables users to filter torrents from subscribed RSS feeds using specific keywords and initiate downloads via the RPC server of either aria2c or transmission. Special thanks to trishika for the initial version.
+## Features
 
-## Key Features
+- Supports both aria2c and transmission RPC
+- Flexible feed configuration with include/exclude filters
+- Magnet link extraction and reconstruction
+- Automatic cleanup of completed downloads
+- Simple YAML configuration
+- Lightweight and fast
 
-- **Magnet Link Extraction:**  
-  When an `extracter` is specified in the `at-rss.conf` file, the script extracts a hash from a designated element (e.g., `title`, `link`, `description`, `enclosure`, or `guid`) using a user-defined regular expression pattern. This hash is then used to reconstruct a magnet link, replacing the original link in the `enclosure` element. This script uses `bith`, the pattern is usually `"(?:[2-7A-Z]{32}|[0-9a-f]{40})"`.
+## Installation
 
-- **Support for aria2c and transmission:**  
-  This script supports both aria2c and Transmission, giving users the flexibility to choose their preferred torrent client—whether it's for downloading BT or PT, for example. This is done by specifying `aria2c` or `transmission` for each feed. This is probably not the best way, but it works. 
+1. Install Go 1.20+ 
+2. Clone this repository:
+   ```bash
+   git clone https://github.com/picking-gh/at-rss.git
+   cd at-rss
+   ```
+3. Build the binary:
+   ```bash
+   go build
+   ```
 
-- **Keyword Filtering:**  
-  Filters (not using regular expressions) can be applied to the `title` element of RSS items, allowing for both inclusion and exclusion criteria. These filters support simple combining conditions with AND/OR logic. For more details on keyword filtering and configuration, please refer to the `at-rss.conf` file..
+## Configuration
 
-**Note:**  
-The magnet link extraction feature may not be universally applicable; one is encouraged to modify the source code as needed.
+Create `at-rss.conf` in YAML format:
 
-**IMPORTANT:**  
-This script is specifically configured for RSS feeds containing BitTorrent torrents.
+```yaml
+# Example configuration
+my_feed:
+  aria2c:
+    url: "ws://localhost:6800/jsonrpc"
+    token: "your_token"
+  feed:
+    urls: ["https://example.com/rss"]
+  filter:
+    include: ["1080p", "x264"]
+    exclude: ["camrip", "tc"]
+  interval: 60 # minutes
+```
+
+## Running
+
+```bash
+./at-rss -c /path/to/at-rss.conf
+```
+
+Or run as a systemd service (see at-rss.service for example).
+
+## Configuration Options
+
+| Key          | Required | Description                          |
+|--------------|----------|--------------------------------------|
+| aria2c/transmission | Yes      | Download client configuration        |
+| feed.urls    | Yes      | List of RSS feed URLs                |
+| filter.include | No     | Keywords to include (AND logic)      |
+| filter.exclude | No     | Keywords to exclude                  |
+| interval     | No       | Polling interval in minutes (default: 10) |
+| extracter    | No       | Magnet link extraction configuration |
+
+## Technical Details
+
+- Uses gofeed for RSS parsing
+- Supports Chinese text conversion (simplified/traditional)
+- Implements caching to avoid duplicate downloads
+- Automatic cleanup of old entries (30+ days)
+
+## License
+
+MIT License - See [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Pull requests are welcome. For major changes, please open an issue first to discuss.
