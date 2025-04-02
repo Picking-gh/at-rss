@@ -162,7 +162,7 @@ type infoHashSet map[string]struct{}
 func (t *Task) getAllInfoHashes(cache *Cache) infoHashSet {
 	infoHashSet := make(infoHashSet)
 	for _, items := range cache.data {
-		for _, infoHashes := range items {
+		for _, infoHashes := range items.Items { // Access the Items field of FeedCache
 			for _, infoHash := range infoHashes {
 				infoHashSet[infoHash] = struct{}{}
 			}
