@@ -43,12 +43,12 @@ func NewCache() (*Cache, error) {
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get user home directory: %w", err)
+		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 	cache.filePath = filepath.Join(homeDir, cacheFileName)
 
 	if err := loadCache(cache.filePath, &cache.data); err != nil {
-		slog.Warn("Failed to load cache, will initialize empty cache", "err", err)
+		slog.Warn("failed to load cache, will initialize empty cache", "err", err)
 	}
 
 	return cache, nil
@@ -189,13 +189,13 @@ func (c *Cache) Flush() error {
 // with atomic write operation to prevent data corruption.
 func saveCache(filePath string, object interface{}) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0744); err != nil {
-		return fmt.Errorf("Failed to create cache directory: %w", err)
+		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
 	tmpPath := filePath + ".tmp"
 	file, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("Failed to create temporary file: %w", err)
+		return fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	defer os.Remove(tmpPath)
 
@@ -206,11 +206,11 @@ func saveCache(filePath string, object interface{}) error {
 		return fmt.Errorf("JSON encoding failed: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("Failed to close temporary file: %w", err)
+		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, filePath); err != nil {
-		return fmt.Errorf("Atomic rename failed: %w", err)
+		return fmt.Errorf("failed to rename temporary file: %w", err)
 	}
 	return nil
 }
@@ -223,7 +223,7 @@ func loadCache(filePath string, object interface{}) error {
 		return nil // File not found is not considered an error
 	}
 	if err != nil {
-		return fmt.Errorf("Failed to open cache file: %w", err)
+		return fmt.Errorf("failed to open cache file: %w", err)
 	}
 	defer file.Close()
 

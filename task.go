@@ -14,7 +14,8 @@ import (
 	"time"
 )
 
-type ServerConfig struct {
+// ParsedDownloaderConfig holds the parsed and validated configuration for a single downloader instance, used internally.
+type ParsedDownloaderConfig struct {
 	RpcType  string // "aria2c" or "transmission"
 	Url      string // for aria2c rpc
 	Token    string // for aria2c rpc
@@ -25,7 +26,7 @@ type ServerConfig struct {
 }
 
 type Task struct {
-	ServerConfig  ServerConfig
+	Downloaders   []ParsedDownloaderConfig
 	FetchInterval time.Duration
 	FeedUrls      []string
 	parserConfig  *ParserConfig
@@ -84,17 +85,8 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 		"error", lastErr)
 }
 
-// doFetchTorrents contains the actual fetch logic
+// doFetchTorrents contains the actual fetch logic, attempting downloaders sequentially.
 func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
-	client, err := t.createRpcClient()
-	if err != nil {
-		slog.Warn("Failed to create RPC client", "type", t.ServerConfig.RpcType, "error", err)
-		return err
-	}
-	defer func() {
-		client.CleanUp()
-		client.CloseRpc()
-	}()
 
 	// infoHashSet keeps track of the hashes of magnet links added
 	infoHashSet := t.getAllInfoHashes(cache)
@@ -120,16 +112,42 @@ func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 			if torrent == nil {
 				continue
 			}
-			if err := client.AddTorrent(torrent.URL); err != nil {
-				// Mark item as unprocessed if it fails to add, so it's retried in the next fetchTorrents call
-				slog.Error("Failed to add torrent",
+			added := false
+			var lastAddErr error
+			for _, dlConfig := range t.Downloaders {
+				client, err := createRpcClientForConfig(t.ctx, dlConfig)
+				if err != nil {
+					slog.Warn("Failed to create RPC client for config, skipping", "type", dlConfig.RpcType, "error", err)
+					lastAddErr = err
+					continue
+				}
+
+				err = client.AddTorrent(torrent.URL)
+				client.CleanUp()  // Clean up immediately after use
+				client.CloseRpc() // Close immediately after use
+
+				if err == nil {
+					slog.Info("Successfully added torrent", "URL", torrent.URL, "downloader_type", dlConfig.RpcType)
+					added = true
+					// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
+					infoHashSet.add(torrent.InfoHashes)
+					newItems[guid] = torrent.InfoHashes
+					break // Success, move to the next torrent item
+				} else {
+					slog.Warn("Failed to add torrent with downloader",
+						"URL", torrent.URL,
+						"downloader_type", dlConfig.RpcType,
+						"error", err)
+					lastAddErr = err // Keep track of the last error
+				}
+			}
+
+			if !added {
+				// Mark item as unprocessed if all downloaders failed
+				slog.Error("Failed to add torrent with all downloaders",
 					"URL", torrent.URL,
-					"error", err)
+					"last_error", lastAddErr) // Log the last encountered error
 				delete(newItems, guid)
-			} else {
-				// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
-				infoHashSet.add(torrent.InfoHashes)
-				newItems[guid] = torrent.InfoHashes
 			}
 		}
 		parser.RemoveExpiredItems(cache)
@@ -139,18 +157,19 @@ func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 	return nil
 }
 
-// createRpcClient initializes the appropriate RPC client based on RpcType.
-func (t *Task) createRpcClient() (RpcClient, error) {
+// createRpcClientForConfig initializes the appropriate RPC client based on a specific ParsedDownloaderConfig.
+// This is now a standalone function, not a method on Task.
+func createRpcClientForConfig(ctx context.Context, cfg ParsedDownloaderConfig) (RpcClient, error) {
 	var client RpcClient
 	var err error
 
-	switch t.ServerConfig.RpcType {
+	switch cfg.RpcType {
 	case "aria2c":
-		client, err = NewAria2c(t.ctx, t.ServerConfig.Url, t.ServerConfig.Token)
+		client, err = NewAria2c(ctx, cfg.Url, cfg.Token)
 	case "transmission":
-		client, err = NewTransmission(t.ctx, t.ServerConfig.Host, t.ServerConfig.Port, t.ServerConfig.Username, t.ServerConfig.Password)
+		client, err = NewTransmission(ctx, cfg.Host, cfg.Port, cfg.Username, cfg.Password)
 	default:
-		err = errors.New("unknown RpcType: " + t.ServerConfig.RpcType)
+		err = errors.New("unknown RpcType: " + cfg.RpcType)
 	}
 
 	return client, err
@@ -161,8 +180,8 @@ type infoHashSet map[string]struct{}
 
 func (t *Task) getAllInfoHashes(cache *Cache) infoHashSet {
 	infoHashSet := make(infoHashSet)
-	for _, items := range cache.data {
-		for _, infoHashes := range items.Items { // Access the Items field of FeedCache
+	for _, feedCache := range cache.data {
+		for _, infoHashes := range feedCache.Items { // Iterate through Items map in FeedCache
 			for _, infoHash := range infoHashes {
 				infoHashSet[infoHash] = struct{}{}
 			}

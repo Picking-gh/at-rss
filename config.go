@@ -18,74 +18,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the top-level configuration structure
-type Config struct {
-	Tasks map[string]TaskConfig
-}
+// DownloaderConfig represents the downloader configuration within the YAML file.
+type DownloaderConfig struct {
+	Type string `yaml:"type"` // "aria2c" or "transmission"
 
-// UnmarshalYAML implements custom unmarshaling to support key-value task format
-func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
-	var rawMap map[string]any
-	if err := unmarshal(&rawMap); err != nil {
-		return err
-	}
-
-	c.Tasks = make(map[string]TaskConfig)
-	for name, value := range rawMap {
-		var task TaskConfig
-		task.Name = name
-
-		// Convert raw interface{} to YAML bytes for TaskConfig parsing
-		taskBytes, err := yaml.Marshal(value)
-		if err != nil {
-			return err
-		}
-
-		if err := yaml.Unmarshal(taskBytes, &task); err != nil {
-			return fmt.Errorf("failed to parse task %s: %w", name, err)
-		}
-
-		// Perform basic validation during unmarshaling
-		if task.Aria2c != nil && task.Transmission != nil {
-			return fmt.Errorf("task %s: cannot specify both aria2c and transmission", name)
-		}
-		if task.Aria2c == nil && task.Transmission == nil {
-			return fmt.Errorf("task %s: must specify either aria2c or transmission", name)
-		}
-		if len(task.Feed.URLs) == 0 {
-			return fmt.Errorf("task %s: must specify at least one feed URL", name)
-		}
-
-		c.Tasks[name] = task
-	}
-
-	return nil
-}
-
-// TaskConfig represents a single task configuration
-type TaskConfig struct {
-	Name         string              `yaml:"name,omitempty"`
-	Aria2c       *Aria2cConfig       `yaml:"aria2c,omitempty"`
-	Transmission *TransmissionConfig `yaml:"transmission,omitempty"`
-	Feed         FeedConfig          `yaml:"feed"`
-	Filter       *FilterConfig       `yaml:"filter,omitempty"`
-	Extracter    *ExtracterConfig    `yaml:"extracter,omitempty"`
-	Interval     int                 `yaml:"interval,omitempty"`
-}
-
-// Aria2cConfig represents aria2c RPC configuration
-type Aria2cConfig struct {
-	URL   string `yaml:"url"`
+	// Aria2c specific fields
+	URL   string `yaml:"url,omitempty"`
 	Token string `yaml:"token,omitempty"`
-}
 
-// TransmissionConfig represents transmission RPC configuration
-type TransmissionConfig struct {
-	Host     string `yaml:"host"`
-	Port     uint16 `yaml:"port"`
+	// Transmission specific fields
+	Host     string `yaml:"host,omitempty"`
+	Port     uint16 `yaml:"port,omitempty"`
 	Username string `yaml:"username,omitempty"`
 	Password string `yaml:"password,omitempty"`
 }
+
+// TaskConfig represents a single task configuration.
+type TaskConfig struct {
+	Name        string             `yaml:"-"` // Name is derived from the map key, not parsed from YAML directly here.
+	Downloaders []DownloaderConfig `yaml:"downloaders"`
+	Feed        FeedConfig         `yaml:"feed"`
+	Filter      *FilterConfig      `yaml:"filter,omitempty"`
+	Extracter   *ExtracterConfig   `yaml:"extracter,omitempty"`
+	Interval    int                `yaml:"interval,omitempty"`
+}
+
+// Removed obsolete Aria2cConfig and TransmissionConfig definitions
 
 // FeedConfig represents feed URL configuration (supports single or multiple URLs)
 type FeedConfig struct {
@@ -144,65 +102,88 @@ var validTags = map[string]struct{}{
 
 // LoadConfig loads and validates the configuration from YAML file
 func LoadConfig(filename string) ([]*Task, error) {
-	config, err := loadYAMLConfig(filename)
+	taskConfigs, err := loadYAMLConfig(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	cc, err := gocc.New("t2s")
+	// Validate basic requirements for each task after successful YAML parsing
+	if len(taskConfigs) == 0 {
+		// Handle case where the YAML file is empty or contains no valid tasks
+		return nil, errors.New("no tasks defined in configuration")
+	}
+	for name, taskConfig := range taskConfigs {
+		if len(taskConfig.Downloaders) == 0 {
+			return nil, fmt.Errorf("task %q: must specify at least one downloader", name)
+		}
+		if len(taskConfig.Feed.URLs) == 0 {
+			return nil, fmt.Errorf("task %q: must specify at least one feed URL", name)
+		}
+		// Task name ('name') is available here if needed for future validation logic
+		// before calling parseTask.
+	}
+
+	cc, err := gocc.New("t2s") // Initialize Chinese converter
 	if err != nil {
 		slog.Warn("Failed to initialize Chinese converter", "err", err)
 	}
 
 	var tasks []*Task
-	for _, taskConfig := range config.Tasks {
-		task, err := parseTask(taskConfig, cc)
+	for name, taskConfig := range taskConfigs {
+		// Pass name to parseTask for better error context
+		task, err := parseTask(name, taskConfig, cc)
 		if err != nil {
-			return nil, fmt.Errorf("invalid task configuration: %w", err)
+			// Add task name to the wrapper message
+			return nil, fmt.Errorf("invalid configuration for task %q: %w", name, err)
 		}
 		tasks = append(tasks, task)
 	}
 
 	if len(tasks) == 0 {
-		return nil, errors.New("no valid tasks found in configuration")
+		// This error means tasks were defined in YAML, but none were successfully parsed into Task objects.
+		return nil, errors.New("no valid tasks could be parsed from the configuration")
 	}
 
 	return tasks, nil
 }
 
 // loadYAMLConfig reads and unmarshals the YAML configuration file
-func loadYAMLConfig(filename string) (*Config, error) {
+func loadYAMLConfig(filename string) (map[string]TaskConfig, error) {
 	source, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	var config Config
-	if err := yaml.Unmarshal(source, &config); err != nil {
+	var taskConfigs map[string]TaskConfig
+	if err := yaml.Unmarshal(source, &taskConfigs); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML config: %w", err)
 	}
 
-	return &config, nil
+	return taskConfigs, nil
 }
 
-// parseTask converts TaskConfig to Task
-func parseTask(config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
+// parseTask converts TaskConfig to Task, accepting the task name for context
+func parseTask(name string, config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
 	// Set default interval if not specified
 	if config.Interval <= 0 {
 		config.Interval = defaultFetchInterval
 	}
 
 	task := &Task{
-		parserConfig:  &ParserConfig{}, // Will be properly initialized in parseExtracterConfig
+		parserConfig:  &ParserConfig{},
 		FeedUrls:      config.Feed.URLs,
 		FetchInterval: time.Duration(config.Interval) * time.Minute,
+		Downloaders:   make([]ParsedDownloaderConfig, 0, len(config.Downloaders)),
 	}
 
-	// Parse RPC configuration
-	if config.Aria2c != nil {
-		parseAria2cConfig(task, config.Aria2c)
-	} else {
-		parseTransmissionConfig(task, config.Transmission)
+	// Parse downloader configurations from YAML struct to internal struct
+	for i, dlYAML := range config.Downloaders {
+		dlConfig, err := parseDownloaderConfig(dlYAML)
+		if err != nil {
+			// Use the passed 'name' instead of config.Name (which isn't set)
+			return nil, fmt.Errorf("invalid downloader config at index %d for task %q: %w", i, name, err)
+		}
+		task.Downloaders = append(task.Downloaders, dlConfig)
 	}
 
 	// Parse filter if specified
@@ -213,36 +194,46 @@ func parseTask(config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
 	// Parse extracter if specified
 	if config.Extracter != nil {
 		if err := parseExtracterConfig(task, config.Extracter); err != nil {
-			return nil, err
+			// Add task name context here too
+			return nil, fmt.Errorf("invalid extracter config for task %q: %w", name, err)
 		}
 	}
 
 	return task, nil
 }
 
-// parseAria2cConfig processes the aria2c configuration
-func parseAria2cConfig(t *Task, cfg *Aria2cConfig) {
-	t.ServerConfig.RpcType = "aria2c"
-	t.ServerConfig.Url = cfg.URL
-	if t.ServerConfig.Url == "" {
-		t.ServerConfig.Url = defaultAria2cRpcUrl
+// parseDownloaderConfig converts the YAML DownloaderConfig representation
+// to the internal ParsedDownloaderConfig struct used by tasks.
+func parseDownloaderConfig(dlYAML DownloaderConfig) (ParsedDownloaderConfig, error) {
+	// Create the internal ParsedDownloaderConfig struct (defined in task.go)
+	cfg := ParsedDownloaderConfig{
+		RpcType: strings.ToLower(dlYAML.Type),
 	}
-	t.ServerConfig.Token = cfg.Token
-}
 
-// parseTransmissionConfig processes the transmission configuration
-func parseTransmissionConfig(t *Task, cfg *TransmissionConfig) {
-	t.ServerConfig.RpcType = "transmission"
-	t.ServerConfig.Host = cfg.Host
-	if t.ServerConfig.Host == "" {
-		t.ServerConfig.Host = defaultTransmissionRpcHost
+	switch cfg.RpcType {
+	case "aria2c":
+		cfg.Url = dlYAML.URL
+		if cfg.Url == "" {
+			cfg.Url = defaultAria2cRpcUrl
+		}
+		cfg.Token = dlYAML.Token
+	case "transmission":
+		cfg.Host = dlYAML.Host
+		if cfg.Host == "" {
+			cfg.Host = defaultTransmissionRpcHost
+		}
+		cfg.Port = dlYAML.Port
+		if cfg.Port == 0 {
+			cfg.Port = defaultTransmissionRpcPort
+		}
+		cfg.Username = dlYAML.Username
+		cfg.Password = dlYAML.Password
+	default:
+		// Return zero value of ParsedDownloaderConfig on error
+		return ParsedDownloaderConfig{}, fmt.Errorf("unknown downloader type: %s", dlYAML.Type)
 	}
-	t.ServerConfig.Port = cfg.Port
-	if t.ServerConfig.Port == 0 {
-		t.ServerConfig.Port = defaultTransmissionRpcPort
-	}
-	t.ServerConfig.Username = cfg.Username
-	t.ServerConfig.Password = cfg.Password
+
+	return cfg, nil
 }
 
 // parseFilterConfig processes the filter configuration
