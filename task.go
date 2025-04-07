@@ -9,20 +9,21 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html"
 	"log/slog"
+	"strings"
 	"time"
 )
 
 // ParsedDownloaderConfig holds the parsed and validated configuration for a single downloader instance, used internally.
 type ParsedDownloaderConfig struct {
-	RpcType  string // "aria2c" or "transmission"
-	Url      string // for aria2c rpc
-	Token    string // for aria2c rpc
-	Host     string // for transmission rpc
-	Port     uint16 // for transmission rpc
-	Username string // for transmission rpc
-	Password string // for transmission rpc
+	RpcType     string // "aria2c" or "transmission"
+	RpcUrl      string // The fully constructed RPC URL (e.g., "http://localhost:6800/jsonrpc")
+	Token       string // For aria2c authentication
+	Username    string // For transmission authentication
+	Password    string // For transmission authentication
+	AutoCleanUp bool   // Whether to automatically clean up completed tasks
 }
 
 type Task struct {
@@ -52,14 +53,12 @@ func (t *Task) Start(ctx context.Context, cache *Cache) {
 	defer ticker.Stop()
 	t.ctx = ctx
 
-	// Fetch torrents initially and then repeatedly at intervals
-	// The initial invoking does not ignore processed items. In this case, configure may have been changed, and shall check processed items to apply new filters
-	// The repeated invokings ignore processed items. In this case, configure is kept unchanged.
 	t.fetchTorrents(cache, false)
 	for {
 		select {
 		case <-ticker.C:
 			t.fetchTorrents(cache, true)
+			t.cleanUpTorrents()
 		case <-t.ctx.Done():
 			return
 		}
@@ -88,7 +87,6 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 // doFetchTorrents contains the actual fetch logic, attempting downloaders sequentially.
 func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 
-	// infoHashSet keeps track of the hashes of magnet links added
 	infoHashSet := t.getAllInfoHashes(cache)
 	for _, feedUrl := range t.FeedUrls {
 		parser := NewFeedParser(t.ctx, feedUrl, t.parserConfig)
@@ -97,7 +95,7 @@ func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 		}
 		var processedItems map[string][]string
 		if ignoreProcessed {
-			processedItems = cache.Get(feedUrl) // Items processed before
+			processedItems = cache.Get(feedUrl)
 		}
 		newItems := parser.GetGUIDSet()
 
@@ -123,13 +121,11 @@ func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 				}
 
 				err = client.AddTorrent(torrent.URL)
-				client.CleanUp()  // Clean up immediately after use
-				client.CloseRpc() // Close immediately after use
+				client.CloseRpc() // Close connection regardless of cleanup
 
 				if err == nil {
 					slog.Info("Successfully added torrent", "URL", torrent.URL, "downloader_type", dlConfig.RpcType)
 					added = true
-					// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
 					infoHashSet.add(torrent.InfoHashes)
 					newItems[guid] = torrent.InfoHashes
 					break // Success, move to the next torrent item
@@ -157,19 +153,39 @@ func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 	return nil
 }
 
-// createRpcClientForConfig initializes the appropriate RPC client based on a specific ParsedDownloaderConfig.
-// This is now a standalone function, not a method on Task.
+func (t *Task) cleanUpTorrents() {
+	for _, dlConfig := range t.Downloaders {
+		client, err := createRpcClientForConfig(t.ctx, dlConfig)
+		if err != nil {
+			slog.Warn("Failed to create RPC client for config, skipping", "type", dlConfig.RpcType, "error", err)
+			continue
+		}
+
+		if dlConfig.AutoCleanUp { // Check the flag before cleaning up
+			client.CleanUp()
+		}
+		client.CloseRpc() // Close connection regardless of cleanup
+	}
+}
+
 func createRpcClientForConfig(ctx context.Context, cfg ParsedDownloaderConfig) (RpcClient, error) {
 	var client RpcClient
 	var err error
 
 	switch cfg.RpcType {
 	case "aria2c":
-		client, err = NewAria2c(ctx, cfg.Url, cfg.Token)
+		// NewAria2c takes RpcUrl and Token
+		client, err = NewAria2c(ctx, cfg.RpcUrl, cfg.Token)
+		if err != nil && strings.Contains(cfg.RpcUrl, "ws://") || strings.Contains(cfg.RpcUrl, "wss://") {
+			// Provide a more specific error if it's a WebSocket URL, as we explicitly disallow it in config parsing
+			err = fmt.Errorf("aria2c WebSocket protocol is not supported: %w", err)
+		}
 	case "transmission":
-		client, err = NewTransmission(ctx, cfg.Host, cfg.Port, cfg.Username, cfg.Password)
+		// NewTransmission takes RpcUrl, Username, and Password
+		client, err = NewTransmission(ctx, cfg.RpcUrl, cfg.Username, cfg.Password)
 	default:
-		err = errors.New("unknown RpcType: " + cfg.RpcType)
+		// This case should ideally not be reached due to validation in parseDownloaderConfig
+		err = errors.New("unknown RpcType encountered in createRpcClientForConfig: " + cfg.RpcType)
 	}
 
 	return client, err
@@ -190,14 +206,12 @@ func (t *Task) getAllInfoHashes(cache *Cache) infoHashSet {
 	return infoHashSet
 }
 
-// add adds info hashes to the set
 func (s infoHashSet) add(hashes []string) {
 	for _, h := range hashes {
 		s[h] = struct{}{}
 	}
 }
 
-// contains checks if a hash exists in the set
 func (s infoHashSet) contains(hash string) bool {
 	_, ok := s[hash]
 	return ok

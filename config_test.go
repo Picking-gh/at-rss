@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -93,7 +94,6 @@ feed6:
   feed: "http://example.com/feed6"`,
 			wantErr: false,
 		},
-		// Removed error test cases (wantErr: true)
 	}
 
 	for _, tt := range tests {
@@ -103,7 +103,6 @@ feed6:
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			// Removed error message checking as only wantErr: false cases remain
 			if !tt.wantErr && len(taskConfigs) == 0 {
 				t.Error("Expected tasks but got none")
 			}
@@ -112,13 +111,16 @@ feed6:
 }
 
 func TestLoadConfig(t *testing.T) {
+	// Helper to build default URLs for tests
+	defaultAria2cHttpUrl := "http://" + defaultAria2cHost + ":" + fmt.Sprintf("%d", defaultAria2cPort) + defaultAria2cRpcPath
+	defaultTransmissionHttpUrl := "http://" + defaultTransmissionHost + ":" + fmt.Sprintf("%d", defaultTransmissionPort) + defaultTransmissionRpcPath
+
 	type expectedTask struct {
-		FeedURLCount         int
-		DownloaderCount      int
-		FirstDownloaderType  string
-		FirstDownloaderURL   string
-		FirstDownloaderHost  string
-		FetchIntervalMinutes int
+		FeedURLCount          int
+		DownloaderCount       int
+		FirstDownloaderType   string
+		FirstDownloaderRpcUrl string // Changed from URL/Host
+		FetchIntervalMinutes  int
 	}
 
 	tests := []struct {
@@ -133,11 +135,12 @@ func TestLoadConfig(t *testing.T) {
 feed1:
   downloaders:
     - type: aria2c
-      url: "ws://custom.aria2c.host/jsonrpc" # Custom URL
+      host: "custom.aria2c.host" # Custom host, default port/path/http
   feed: "http://example.com/feed1"`,
 			wantTasks: 1,
 			expectedData: []expectedTask{
-				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "aria2c", FirstDownloaderURL: "ws://custom.aria2c.host/jsonrpc", FetchIntervalMinutes: defaultFetchInterval},
+				// Note: ws:// is no longer directly supported in config, it defaults to http/https
+				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "aria2c", FirstDownloaderRpcUrl: "http://custom.aria2c.host:6800/jsonrpc", FetchIntervalMinutes: defaultFetchInterval},
 			},
 		},
 		{
@@ -152,7 +155,7 @@ feed2:
   interval: 20 # Custom interval`,
 			wantTasks: 1,
 			expectedData: []expectedTask{
-				{FeedURLCount: 2, DownloaderCount: 2, FirstDownloaderType: "aria2c", FirstDownloaderURL: defaultAria2cRpcUrl, FetchIntervalMinutes: 20},
+				{FeedURLCount: 2, DownloaderCount: 2, FirstDownloaderType: "aria2c", FirstDownloaderRpcUrl: defaultAria2cHttpUrl, FetchIntervalMinutes: 20},
 			},
 		},
 		{
@@ -167,8 +170,8 @@ task_b: # Custom interval and downloader
   interval: 5`,
 			wantTasks: 2,
 			expectedData: []expectedTask{
-				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "aria2c", FirstDownloaderURL: defaultAria2cRpcUrl, FetchIntervalMinutes: defaultFetchInterval},
-				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "transmission", FirstDownloaderHost: "192.168.1.1", FetchIntervalMinutes: 5},
+				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "aria2c", FirstDownloaderRpcUrl: defaultAria2cHttpUrl, FetchIntervalMinutes: defaultFetchInterval},
+				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "transmission", FirstDownloaderRpcUrl: "http://192.168.1.1:9091/transmission/rpc", FetchIntervalMinutes: 5},
 			},
 		},
 		{
@@ -180,7 +183,7 @@ feed_tm_defaults:
   feed: "http://example.com/tm_defaults"`,
 			wantTasks: 1,
 			expectedData: []expectedTask{
-				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "transmission", FirstDownloaderHost: defaultTransmissionRpcHost, FetchIntervalMinutes: defaultFetchInterval},
+				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "transmission", FirstDownloaderRpcUrl: defaultTransmissionHttpUrl, FetchIntervalMinutes: defaultFetchInterval},
 			},
 		},
 	}
@@ -229,12 +232,11 @@ feed_tm_defaults:
 						if firstDownloader.RpcType != expected.FirstDownloaderType {
 							t.Errorf("Task %d, Downloader 0: got type %q, want %q", i, firstDownloader.RpcType, expected.FirstDownloaderType)
 						}
-						if expected.FirstDownloaderURL != "" && firstDownloader.Url != expected.FirstDownloaderURL {
-							t.Errorf("Task %d, Downloader 0: got URL %q, want %q", i, firstDownloader.Url, expected.FirstDownloaderURL)
+						// Check the constructed RpcUrl
+						if expected.FirstDownloaderRpcUrl != "" && firstDownloader.RpcUrl != expected.FirstDownloaderRpcUrl {
+							t.Errorf("Task %d, Downloader 0: got RpcUrl %q, want %q", i, firstDownloader.RpcUrl, expected.FirstDownloaderRpcUrl)
 						}
-						if expected.FirstDownloaderHost != "" && firstDownloader.Host != expected.FirstDownloaderHost {
-							t.Errorf("Task %d, Downloader 0: got Host %q, want %q", i, firstDownloader.Host, expected.FirstDownloaderHost)
-						}
+						// Remove checks for deprecated fields Url and Host
 					}
 					expectedInterval := time.Duration(expected.FetchIntervalMinutes) * time.Minute
 					if task.FetchInterval != expectedInterval {

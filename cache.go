@@ -56,8 +56,6 @@ func NewCache() (*Cache, error) {
 
 // Get returns a copy of non-empty entries from the map associated with the given key
 // or an empty map if the key doesn't exist.
-// Get returns a copy of non-empty entries from the Items map associated with the given key
-// or an empty map if the key doesn't exist.
 func (c *Cache) Get(key string) map[string][]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -78,7 +76,7 @@ func (c *Cache) Get(key string) map[string][]string {
 // If 'overwrite' is true, it will always overwrite values for a GUID.
 func (c *Cache) Set(key string, value map[string][]string, overwrite bool) {
 	if len(value) == 0 {
-		return // Nothing to set
+		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -118,7 +116,7 @@ func (c *Cache) RemoveNotIn(key string, validEntries map[string][]string) {
 
 	feedCache, exists := c.data[key]
 	if !exists || len(feedCache.Items) == 0 {
-		return // Nothing to remove from
+		return
 	}
 
 	itemsChanged := false
@@ -142,7 +140,6 @@ func (c *Cache) Flush() error {
 	c.mu.Lock() // Lock for the entire duration of cleanup and saving
 	defer c.mu.Unlock()
 
-	// --- Cleanup Logic ---
 	thirtyDaysAgo := time.Now().Add(-30 * 24 * time.Hour)
 	feedsToDelete := []string{} // Collect keys of feeds to delete entirely
 
@@ -180,14 +177,13 @@ func (c *Cache) Flush() error {
 			delete(c.data, feedURL)
 		}
 	}
-	// --- End Cleanup Logic ---
 
 	return saveCache(c.filePath, c.data)
 }
 
 // saveCache creates necessary directories and serializes the given object to a file using yaml encoding
 // with atomic write operation to prevent data corruption.
-func saveCache(filePath string, object interface{}) error {
+func saveCache(filePath string, object any) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0744); err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
@@ -217,7 +213,7 @@ func saveCache(filePath string, object interface{}) error {
 
 // loadCache opens a file and deserializes its contents into the provided object using yaml encoding.
 // Returns nil if file doesn't exist, error for other failures.
-func loadCache(filePath string, object interface{}) error {
+func loadCache(filePath string, object any) error {
 	file, err := os.Open(filePath)
 	if os.IsNotExist(err) {
 		return nil // File not found is not considered an error

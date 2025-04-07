@@ -7,41 +7,132 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"net/http"
+	"strings"
 	"time"
-
-	"github.com/zyxar/argo/rpc"
 )
 
 // Aria2c handle the aria2c api request
 type Aria2c struct {
-	rpc.Client
-	ctx context.Context
+	rpcURL     string
+	httpClient *http.Client
+	ctx        context.Context
+	rpcToken   string
 }
 
-// NewAria2c return a new Aria2c object
-func NewAria2c(ctx context.Context, url string, token string) (*Aria2c, error) {
-	c, err := rpc.New(ctx, url, token, 30*time.Second, nil)
+type aria2Request struct {
+	Jsonrpc string `json:"jsonrpc"`
+	ID      string `json:"id"`
+	Method  string `json:"method"`
+	Params  []any  `json:"params"`
+}
 
-	if err != nil {
-		return nil, err
+type aria2Response struct {
+	Jsonrpc string      `json:"jsonrpc"`
+	ID      string      `json:"id"`
+	Result  any         `json:"result,omitempty"`
+	Error   *aria2Error `json:"error,omitempty"`
+}
+
+type aria2Error struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *aria2Error) Error() string {
+	return fmt.Sprintf("aria2 rpc error (%d): %s", e.Code, e.Message)
+}
+
+// NewAria2c returns a new Aria2c object.
+// It expects rpcUrl to be a valid http or https URL.
+func NewAria2c(ctx context.Context, rpcUrl string, token string) (*Aria2c, error) {
+	if rpcUrl == "" {
+		return nil, fmt.Errorf("aria2c RPC URL cannot be empty")
 	}
-	return &Aria2c{c, ctx}, nil
+
+	// Basic validation if it looks like a URL (doesn't need full parsing now)
+	if !strings.HasPrefix(rpcUrl, "http://") && !strings.HasPrefix(rpcUrl, "https://") {
+		return nil, fmt.Errorf("invalid aria2c RPC URL scheme in %q: must be http or https", rpcUrl)
+	}
+
+	client := &http.Client{
+		Timeout: 30 * time.Second, // Keep the original timeout
+	}
+	a := &Aria2c{
+		rpcURL:     rpcUrl,
+		rpcToken:   "token:" + token, // Aria2 expects "token:" prefix
+		httpClient: client,
+		ctx:        ctx,
+	}
+
+	return a, nil
 }
 
-// Add add a new link to the aria2c server
+func (a *Aria2c) call(method string, params []any) (*aria2Response, error) {
+	actualParams := append([]any{a.rpcToken}, params...)
+
+	reqPayload := aria2Request{
+		Jsonrpc: "2.0",
+		ID:      fmt.Sprintf("at-rss-%d", rand.Int()), // Simple unique ID
+		Method:  method,
+		Params:  actualParams,
+	}
+
+	reqBody, err := json.Marshal(reqPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal aria2c request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(a.ctx, "POST", a.rpcURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create aria2c request to %s: %w", a.rpcURL, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		// Include the target URL in the error message for clarity
+		return nil, fmt.Errorf("failed to execute aria2c request (%s) to %s: %w", method, a.rpcURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("aria2c request (%s) to %s failed with status: %s", method, a.rpcURL, resp.Status)
+	}
+
+	var respPayload aria2Response
+	if err := json.NewDecoder(resp.Body).Decode(&respPayload); err != nil {
+		return nil, fmt.Errorf("failed to decode aria2c response (%s) from %s: %w", method, a.rpcURL, err)
+	}
+
+	if respPayload.Error != nil {
+		return nil, respPayload.Error
+	}
+
+	return &respPayload, nil
+}
+
+// AddTorrent adds a new torrent URI to the aria2c server
 func (a *Aria2c) AddTorrent(uri string) error {
-	// AddURI expects a slice of URIs, so wrap the single URI in a slice.
-	_, err := a.AddURI([]string{uri})
+	// AddURI expects a slice of URIs and options map
+	// We pass an empty options map {}
+	_, err := a.call("aria2.addUri", []any{[]string{uri}, map[string]string{}})
 	return err
 }
 
 // CleanUp purges completed/error/removed downloads
 func (a *Aria2c) CleanUp() {
-	a.PurgeDownloadResult()
+	// PurgeDownloadResult takes no extra parameters
+	_, _ = a.call("aria2.purgeDownloadResult", []any{})
+	// Ignore error for cleanup, best effort
 }
 
-// Close closes the connection to the aria2 rpc interface
+// CloseRpc closes the underlying http client idle connections
 func (a *Aria2c) CloseRpc() {
-	a.Close()
+	a.httpClient.CloseIdleConnections()
 }

@@ -79,14 +79,13 @@ func NewFeedParser(ctx context.Context, url string, pc *ParserConfig) *Feed {
 		return nil
 	}
 
-	cc, _ := gocc.New("t2s") // Initialize converter once
+	cc, _ := gocc.New("t2s")
 	return &Feed{pc, contents, url, ctx, cc}
 }
 
 // ProcessFeedItem processes a single feed item to extract relevant torrent URLs.
 // It returns a TorrentInfo object containing the URL and related info hashes.
 func (f *Feed) ProcessFeedItem(item *gofeed.Item, isInfoHashIgnored func(string) bool) *TorrentInfo {
-	// Apply include and exclude filters on the title
 	var title string
 	rawTitle := html.UnescapeString(item.Title)
 	if f.cc != nil {
@@ -112,7 +111,6 @@ func (f *Feed) ProcessFeedItem(item *gofeed.Item, isInfoHashIgnored func(string)
 				slog.Warn("Pattern did not match any hash", "pattern", f.Pattern)
 				continue
 			}
-			// Avoid adding magnet links with duplicate infoHashes when processing multiple feeds.
 			infoHash, err := regulateInfoHash(matchStrings[1])
 			if err != nil {
 				slog.Warn("Matched infoHash not valid", "error", err)
@@ -172,7 +170,7 @@ func (f *Feed) matchesExcludeFilters(title string) bool {
 // matchesIncludeFilters checks if title matches include filters
 func (f *Feed) matchesIncludeFilters(title string) bool {
 	if len(f.Include) == 0 {
-		return true // No include filters means include all
+		return true
 	}
 	for _, keywords := range f.Include {
 		if allKeywordsMatch(title, keywords) {

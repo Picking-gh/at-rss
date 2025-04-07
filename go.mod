@@ -6,12 +6,10 @@ toolchain go1.24.1
 
 require (
 	github.com/anacrolix/torrent v1.58.1
-	github.com/fsnotify/fsnotify v1.8.0
-	github.com/hekmon/transmissionrpc/v2 v2.0.1
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/liuzl/gocc v0.0.0-20231231122217-0372e1059ca5
 	github.com/mmcdole/gofeed v1.3.0
-	github.com/zyxar/argo v0.0.0-20210923033329-21abde88a063
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -23,9 +21,6 @@ require (
 	github.com/anacrolix/missinggo/v2 v2.8.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/bradfitz/iter v0.0.0-20191230175014-e8f45d346db8 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hekmon/cunits/v2 v2.1.0 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
@@ -39,11 +34,11 @@ require (
 	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	lukechampine.com/blake3 v1.4.0 // indirect
 )

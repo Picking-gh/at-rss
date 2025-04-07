@@ -20,17 +20,18 @@ import (
 
 // DownloaderConfig represents the downloader configuration within the YAML file.
 type DownloaderConfig struct {
-	Type string `yaml:"type"` // "aria2c" or "transmission"
-
-	// Aria2c specific fields
-	URL   string `yaml:"url,omitempty"`
-	Token string `yaml:"token,omitempty"`
-
-	// Transmission specific fields
+	Type     string `yaml:"type"` // "aria2c" or "transmission"
 	Host     string `yaml:"host,omitempty"`
 	Port     uint16 `yaml:"port,omitempty"`
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
+	RpcPath  string `yaml:"rpcPath,omitempty"`  // RPC path (e.g., "/jsonrpc", "/transmission/rpc")
+	UseHttps bool   `yaml:"useHttps,omitempty"` // Use HTTPS instead of HTTP
+
+	// Authentication
+	Token    string `yaml:"token,omitempty"`    // For aria2c
+	Username string `yaml:"username,omitempty"` // For transmission
+	Password string `yaml:"password,omitempty"` // For transmission
+
+	AutoCleanUp bool `yaml:"autoCleanUp,omitempty"` // Option to automatically clean up completed tasks
 }
 
 // TaskConfig represents a single task configuration.
@@ -42,8 +43,6 @@ type TaskConfig struct {
 	Extracter   *ExtracterConfig   `yaml:"extracter,omitempty"`
 	Interval    int                `yaml:"interval,omitempty"`
 }
-
-// Removed obsolete Aria2cConfig and TransmissionConfig definitions
 
 // FeedConfig represents feed URL configuration (supports single or multiple URLs)
 type FeedConfig struct {
@@ -90,10 +89,15 @@ type ExtracterConfig struct {
 }
 
 const (
-	defaultAria2cRpcUrl        = "ws://localhost:6800/jsonrpc"
-	defaultTransmissionRpcHost = "localhost"
-	defaultTransmissionRpcPort = 9091
+	// Default values
+	defaultAria2cHost          = "localhost"
+	defaultAria2cPort          = 6800
+	defaultAria2cRpcPath       = "/jsonrpc"
+	defaultTransmissionHost    = "localhost"
+	defaultTransmissionPort    = 9091
+	defaultTransmissionRpcPath = "/transmission/rpc"
 	defaultFetchInterval       = 10
+	defaultUseHttps            = false
 )
 
 var validTags = map[string]struct{}{
@@ -109,7 +113,6 @@ func LoadConfig(filename string) ([]*Task, error) {
 
 	// Validate basic requirements for each task after successful YAML parsing
 	if len(taskConfigs) == 0 {
-		// Handle case where the YAML file is empty or contains no valid tasks
 		return nil, errors.New("no tasks defined in configuration")
 	}
 	for name, taskConfig := range taskConfigs {
@@ -119,8 +122,6 @@ func LoadConfig(filename string) ([]*Task, error) {
 		if len(taskConfig.Feed.URLs) == 0 {
 			return nil, fmt.Errorf("task %q: must specify at least one feed URL", name)
 		}
-		// Task name ('name') is available here if needed for future validation logic
-		// before calling parseTask.
 	}
 
 	cc, err := gocc.New("t2s") // Initialize Chinese converter
@@ -130,17 +131,14 @@ func LoadConfig(filename string) ([]*Task, error) {
 
 	var tasks []*Task
 	for name, taskConfig := range taskConfigs {
-		// Pass name to parseTask for better error context
 		task, err := parseTask(name, taskConfig, cc)
 		if err != nil {
-			// Add task name to the wrapper message
 			return nil, fmt.Errorf("invalid configuration for task %q: %w", name, err)
 		}
 		tasks = append(tasks, task)
 	}
 
 	if len(tasks) == 0 {
-		// This error means tasks were defined in YAML, but none were successfully parsed into Task objects.
 		return nil, errors.New("no valid tasks could be parsed from the configuration")
 	}
 
@@ -164,7 +162,6 @@ func loadYAMLConfig(filename string) (map[string]TaskConfig, error) {
 
 // parseTask converts TaskConfig to Task, accepting the task name for context
 func parseTask(name string, config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
-	// Set default interval if not specified
 	if config.Interval <= 0 {
 		config.Interval = defaultFetchInterval
 	}
@@ -176,25 +173,20 @@ func parseTask(name string, config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
 		Downloaders:   make([]ParsedDownloaderConfig, 0, len(config.Downloaders)),
 	}
 
-	// Parse downloader configurations from YAML struct to internal struct
 	for i, dlYAML := range config.Downloaders {
 		dlConfig, err := parseDownloaderConfig(dlYAML)
 		if err != nil {
-			// Use the passed 'name' instead of config.Name (which isn't set)
 			return nil, fmt.Errorf("invalid downloader config at index %d for task %q: %w", i, name, err)
 		}
 		task.Downloaders = append(task.Downloaders, dlConfig)
 	}
 
-	// Parse filter if specified
 	if config.Filter != nil {
 		parseFilterConfig(task, config.Filter, cc)
 	}
 
-	// Parse extracter if specified
 	if config.Extracter != nil {
 		if err := parseExtracterConfig(task, config.Extracter); err != nil {
-			// Add task name context here too
 			return nil, fmt.Errorf("invalid extracter config for task %q: %w", name, err)
 		}
 	}
@@ -205,32 +197,63 @@ func parseTask(name string, config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
 // parseDownloaderConfig converts the YAML DownloaderConfig representation
 // to the internal ParsedDownloaderConfig struct used by tasks.
 func parseDownloaderConfig(dlYAML DownloaderConfig) (ParsedDownloaderConfig, error) {
-	// Create the internal ParsedDownloaderConfig struct (defined in task.go)
-	cfg := ParsedDownloaderConfig{
-		RpcType: strings.ToLower(dlYAML.Type),
+	rpcType := strings.ToLower(dlYAML.Type)
+	if rpcType != "aria2c" && rpcType != "transmission" {
+		return ParsedDownloaderConfig{}, fmt.Errorf("unknown downloader type: %s", dlYAML.Type)
 	}
 
-	switch cfg.RpcType {
-	case "aria2c":
-		cfg.Url = dlYAML.URL
-		if cfg.Url == "" {
-			cfg.Url = defaultAria2cRpcUrl
+	// Set defaults based on type
+	host := dlYAML.Host
+	port := dlYAML.Port
+	rpcPath := dlYAML.RpcPath
+	useHttps := dlYAML.UseHttps
+
+	if host == "" {
+		if rpcType == "aria2c" {
+			host = defaultAria2cHost
+		} else {
+			host = defaultTransmissionHost
 		}
-		cfg.Token = dlYAML.Token
-	case "transmission":
-		cfg.Host = dlYAML.Host
-		if cfg.Host == "" {
-			cfg.Host = defaultTransmissionRpcHost
+	}
+	if port == 0 {
+		if rpcType == "aria2c" {
+			port = defaultAria2cPort
+		} else {
+			port = defaultTransmissionPort
 		}
-		cfg.Port = dlYAML.Port
-		if cfg.Port == 0 {
-			cfg.Port = defaultTransmissionRpcPort
+	}
+	if rpcPath == "" {
+		if rpcType == "aria2c" {
+			rpcPath = defaultAria2cRpcPath
+		} else {
+			rpcPath = defaultTransmissionRpcPath
 		}
-		cfg.Username = dlYAML.Username
-		cfg.Password = dlYAML.Password
-	default:
-		// Return zero value of ParsedDownloaderConfig on error
-		return ParsedDownloaderConfig{}, fmt.Errorf("unknown downloader type: %s", dlYAML.Type)
+	}
+	// Ensure rpcPath starts with a slash
+	if !strings.HasPrefix(rpcPath, "/") {
+		rpcPath = "/" + rpcPath
+	}
+
+	// Build URL
+	scheme := "http"
+	if useHttps {
+		scheme = "https"
+	}
+	rpcUrl := fmt.Sprintf("%s://%s:%d%s", scheme, host, port, rpcPath)
+
+	// Create the internal ParsedDownloaderConfig struct (defined in task.go)
+	cfg := ParsedDownloaderConfig{
+		RpcType:     rpcType,
+		RpcUrl:      rpcUrl, // Store the constructed URL
+		AutoCleanUp: dlYAML.AutoCleanUp,
+	}
+
+	// Handle authentication
+	if rpcType == "aria2c" {
+		cfg.Token = dlYAML.Token // Token can be empty
+	} else { // transmission
+		cfg.Username = dlYAML.Username // Username can be empty
+		cfg.Password = dlYAML.Password // Password can be empty
 	}
 
 	return cfg, nil
@@ -252,24 +275,20 @@ func parseExtracterConfig(t *Task, cfg *ExtracterConfig) error {
 		return nil
 	}
 
-	// Validate tag
 	tag := strings.ToLower(cfg.Tag)
 	if _, valid := validTags[tag]; !valid {
 		return fmt.Errorf("invalid extracter tag: %s", tag)
 	}
 
-	// Validate pattern
 	if cfg.Pattern == "" {
 		return errors.New("extracter pattern cannot be empty")
 	}
 
-	// Create new parser config
 	pc, err := NewParserConfig(nil, nil, true, cfg.Pattern, tag)
 	if err != nil {
 		return fmt.Errorf("invalid extracter configuration: %w", err)
 	}
 
-	// Replace the parser config
 	t.parserConfig = pc
 	return nil
 }

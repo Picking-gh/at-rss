@@ -27,7 +27,6 @@ var opt options
 var parser = flags.NewParser(&opt, flags.Default)
 
 func main() {
-	// Parse command line arguments
 	if _, err := parser.Parse(); err != nil {
 		handleFlagsError(err)
 	}
@@ -45,14 +44,12 @@ func main() {
 		return
 	}
 
-	// Init cache for parsing torrent files
 	cache, err := NewCache()
 	if err != nil {
 		slog.Error("Failed to initialize cache", "error", err)
 		return
 	}
 
-	// Handle termination signals
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
@@ -61,7 +58,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Function to manage tasks
 	atRSS := func(ctx context.Context) error {
 		tasks, err := LoadConfig(opt.Config)
 		if err != nil {
@@ -72,14 +68,13 @@ func main() {
 			slog.Warn("No task is running")
 			return nil
 		}
-		// Start tasks in separate goroutines
 		for _, task := range tasks {
 			wg.Add(1)
 			go func(task *Task) {
 				defer wg.Done()
 				task.Start(ctx, cache)
 			}(task)
-			time.Sleep(5 * time.Second) // Optional delay between starting tasks
+			time.Sleep(5 * time.Second)
 		}
 		return nil
 	}
@@ -91,17 +86,16 @@ func main() {
 	debounceDuration := 5 * time.Second
 	for {
 		select {
-		case <-stop: // termination signals
+		case <-stop:
 			cancel()
 			wg.Wait()
 			return
-		case event, ok := <-watcher.Events: // reload configure file when changed
+		case event, ok := <-watcher.Events:
 			if !ok {
 				slog.Error("Configure file watching error", "error", err)
 				return
 			}
 			if event.Has(fsnotify.Write) {
-				// debounce
 				if debounceTimer == nil {
 					debounceTimer = time.AfterFunc(debounceDuration, func() {
 						slog.Info("Reloading configure file...")
