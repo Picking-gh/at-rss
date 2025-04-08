@@ -9,7 +9,6 @@ A lightweight RSS feed parser that monitors RSS feeds and automatically download
 - Magnet link extraction and reconstruction
 - Automatic cleanup of completed downloads
 - Simple YAML configuration
-- Lightweight and fast
 
 ## Installation
 
@@ -31,11 +30,11 @@ Create `at-rss.conf` in YAML format:
 ```yaml
 # Example configuration
 my_feed:
-  aria2c:
-    url: "ws://localhost:6800/jsonrpc"
-    token: "your_token"
-  feed:
-    urls: ["https://example.com/rss"]
+  downloader:
+    - type: aria2c
+      token: "your_token"
+      autoCleanUp: true
+  feed: "https://example.com/rss"
   filter:
     include: ["1080p", "x264"]
     exclude: ["camrip", "tc"]
@@ -54,9 +53,9 @@ Or run as a systemd service (see at-rss.service for example).
 
 | Key          | Required | Description                          |
 |--------------|----------|--------------------------------------|
-| aria2c/transmission | Yes      | Download client configuration        |
-| feed.urls    | Yes      | List of RSS feed URLs                |
-| filter.include | No     | Keywords to include (AND logic)      |
+| downloader   | Yes      | Download client configuration        |
+| feed         | Yes      | List of RSS feed URLs                |
+| filter.include | No     | Keywords to include                  |
 | filter.exclude | No     | Keywords to exclude                  |
 | interval     | No       | Polling interval in minutes (default: 10) |
 | extracter    | No       | Magnet link extraction configuration |
@@ -66,7 +65,6 @@ Or run as a systemd service (see at-rss.service for example).
 - Uses gofeed for RSS parsing
 - Supports Chinese text conversion (simplified/traditional)
 - Implements caching to avoid duplicate downloads
-- Automatic cleanup of old entries (30+ days)
 
 ## License
 
