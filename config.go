@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/liuzl/gocc"
@@ -36,12 +37,12 @@ type DownloaderConfig struct {
 
 // TaskConfig represents a single task configuration.
 type TaskConfig struct {
-	Name        string             `yaml:"-"` // Name is derived from the map key, not parsed from YAML directly here.
-	Downloaders []DownloaderConfig `yaml:"downloaders"`
-	Feed        FeedConfig         `yaml:"feed"`
-	Filter      *FilterConfig      `yaml:"filter,omitempty"`
-	Extracter   *ExtracterConfig   `yaml:"extracter,omitempty"`
-	Interval    int                `yaml:"interval,omitempty"`
+	Name        string             `yaml:"-" json:"-"` // Name is derived from the map key, not parsed from YAML directly here.
+	Downloaders []DownloaderConfig `yaml:"downloaders" json:"downloaders"`
+	Feed        FeedConfig         `yaml:"feed" json:"feed"`
+	Filter      *FilterConfig      `yaml:"filter,omitempty" json:"filter,omitempty"`
+	Extracter   *ExtracterConfig   `yaml:"extracter,omitempty" json:"extracter,omitempty"`
+	Interval    int                `yaml:"interval,omitempty" json:"interval,omitempty"`
 }
 
 // FeedConfig represents feed URL configuration (supports single or multiple URLs)
@@ -78,14 +79,14 @@ func (f *FeedConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 // FilterConfig represents content filter configuration
 type FilterConfig struct {
-	Include []string `yaml:"include,omitempty"`
-	Exclude []string `yaml:"exclude,omitempty"`
+	Include []string `yaml:"include,omitempty" json:"include,omitempty"`
+	Exclude []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
 }
 
 // ExtracterConfig represents extraction configuration
 type ExtracterConfig struct {
-	Tag     string `yaml:"tag"`
-	Pattern string `yaml:"pattern"`
+	Tag     string `yaml:"tag" json:"tag"`
+	Pattern string `yaml:"pattern" json:"pattern"`
 }
 
 const (
@@ -104,16 +105,23 @@ var validTags = map[string]struct{}{
 	"title": {}, "link": {}, "description": {}, "enclosure": {}, "guid": {},
 }
 
+var (
+	// configLock protects access to the config file.
+	// Consider potential race conditions if main.go reloads config while API is writing.
+	configLock sync.RWMutex
+)
+
 // LoadConfig loads and validates the configuration from YAML file
 func LoadConfig(filename string) ([]*Task, error) {
-	taskConfigs, err := loadYAMLConfig(filename)
+	taskConfigs, err := LoadYAMLConfig(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Validate basic requirements for each task after successful YAML parsing
 	if len(taskConfigs) == 0 {
-		return nil, errors.New("no tasks defined in configuration")
+		// return nil, errors.New("no tasks defined in configuration")
+		return nil, nil
 	}
 	for name, taskConfig := range taskConfigs {
 		if len(taskConfig.Downloaders) == 0 {
@@ -146,8 +154,11 @@ func LoadConfig(filename string) ([]*Task, error) {
 }
 
 // loadYAMLConfig reads and unmarshals the YAML configuration file
-func loadYAMLConfig(filename string) (map[string]TaskConfig, error) {
-	source, err := os.ReadFile(filename)
+func LoadYAMLConfig(cfgPath string) (map[string]TaskConfig, error) {
+	configLock.Lock()
+	defer configLock.Unlock()
+
+	source, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -158,6 +169,39 @@ func loadYAMLConfig(filename string) (map[string]TaskConfig, error) {
 	}
 
 	return taskConfigs, nil
+}
+
+// SaveYAMLConfig saves the task configurations back to the YAML file.
+// It acquires a write lock and performs an atomic write.
+func SaveYAMLConfig(cfgPath string, taskConfigs map[string]TaskConfig) error {
+	configLock.Lock()
+	defer configLock.Unlock()
+
+	// Ensure consistent map order for cleaner diffs (optional but good practice)
+	// Note: yaml.v3 generally preserves order, but explicit sorting might be needed
+	// if map iteration order becomes critical elsewhere.
+
+	data, err := yaml.Marshal(taskConfigs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to YAML: %w", err)
+	}
+
+	// Atomic write: write to temp file then rename
+	tempFile := cfgPath + ".tmp"
+	// Use 0600 for potentially sensitive config data
+	err = os.WriteFile(tempFile, data, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to write to temporary config file %s: %w", tempFile, err)
+	}
+
+	err = os.Rename(tempFile, cfgPath)
+	if err != nil {
+		_ = os.Remove(tempFile) // Clean up temp file
+		return fmt.Errorf("failed to rename temporary config file to %s: %w", cfgPath, err)
+	}
+
+	slog.Info("Configuration saved successfully via API", "path", cfgPath)
+	return nil
 }
 
 // parseTask converts TaskConfig to Task, accepting the task name for context

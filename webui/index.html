@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>at-rss configure</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>at-rss configure</h1>
+
+        <div class="main-layout">
+            <div class="task-list-panel">
+                <h2>Tasks</h2>
+                <ul id="task-list">
+                    <!-- 任务项将由 JS 动态填充 -->
+                    <!-- <li><button class="task-button" data-task-name="Example1">Example1</button></li> -->
+                </ul>
+                <button id="add-task-btn" class="button add-button">Add a new task</button>
+            </div>
+
+            <div class="task-detail-panel" id="task-detail-panel">
+                <h2>Details</h2>
+                <div id="task-form-container">
+                    <!-- 表单将由 JS 动态生成或显示 -->
+                    <p>Please select a task from the left or add a new task.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框 (用于添加/编辑下载器等) -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h3 id="modal-title"></h3>
+            <div id="modal-body">
+                <!-- 模态框内容将由 JS 动态填充 -->
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
