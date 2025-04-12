@@ -8,7 +8,7 @@ A lightweight RSS feed parser that monitors RSS feeds and automatically download
 - Flexible feed configuration with include/exclude filters
 - Magnet link extraction and reconstruction
 - Automatic cleanup of completed downloads
-- Simple YAML configuration
+- Simple YAML configuration via web
 
 ## Installation
 
@@ -45,6 +45,12 @@ my_feed:
 
 ```bash
 ./at-rss -c /path/to/at-rss.conf
+```
+
+or
+
+```bash
+./at-rss -c /path/to/at-rss.conf -web-listen :8080 --web-ui-dir /path/to/webui
 ```
 
 Or run as a systemd service (see at-rss.service for example).

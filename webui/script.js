@@ -276,11 +276,29 @@ document.addEventListener('DOMContentLoaded', () => {
         createListSection(form, 'Downloaders', downloaders, renderDownloaderItem, addDownloader, listId);
     }
 
+    function getRpcUrl(downloader) {
+        const defaultPorts = {
+            aria2c: 6800,
+            transmission: 9091
+        };
+
+        const defaultRpcPaths = {
+            aria2c: '/jsonrpc',
+            transmission: '/transmission/rpc'
+        };
+
+        const protocol = downloader.useHttps ? 'https://' : 'http://';
+        const port = downloader.port || defaultPorts[downloader.type] || 'default';
+        const rpcPath = downloader.rpcPath || defaultRpcPaths[downloader.type] || 'default';
+
+        return `${protocol}${downloader.host || 'localhost'}:${port}${rpcPath}`;
+    }
+
     function renderDownloaderItem(ul, downloader, index) {
         const li = document.createElement('li');
         li.dataset.index = index;
         li.innerHTML = `
-            <span><strong>Type:</strong> ${downloader.type} | <strong>Host:</strong> ${downloader.host || 'default'}:${downloader.port || 'default'}</span>
+            <span><strong>Type:</strong> ${downloader.type} | <strong>RPC URL:</strong> ${getRpcUrl(downloader)}</span>
             <div class="list-item-actions">
                 <button type="button" class="edit-downloader-btn button secondary-button">Edit</button>
                 <button type="button" class="delete-downloader-btn button danger-button">Del</button>
