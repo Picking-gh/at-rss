@@ -15,24 +15,24 @@ import (
 	"sync"
 	"time"
 
+	"github.com/goccy/go-yaml"
 	"github.com/liuzl/gocc"
-	"gopkg.in/yaml.v3"
 )
 
 // DownloaderConfig represents the downloader configuration within the YAML file.
 type DownloaderConfig struct {
-	Type     string `yaml:"type"` // "aria2c" or "transmission"
-	Host     string `yaml:"host,omitempty"`
-	Port     uint16 `yaml:"port,omitempty"`
-	RpcPath  string `yaml:"rpcPath,omitempty"`  // RPC path (e.g., "/jsonrpc", "/transmission/rpc")
-	UseHttps bool   `yaml:"useHttps,omitempty"` // Use HTTPS instead of HTTP
+	Type     string `yaml:"type" json:"type"` // "aria2c" or "transmission"
+	Host     string `yaml:"host,omitempty" json:"host,omitempty"`
+	Port     uint16 `yaml:"port,omitempty" json:"port,omitempty"`
+	RpcPath  string `yaml:"rpcPath,omitempty" json:"rpcPath,omitempty"`   // RPC path (e.g., "/jsonrpc", "/transmission/rpc")
+	UseHttps bool   `yaml:"useHttps,omitempty" json:"useHttps,omitempty"` // Use HTTPS instead of HTTP
 
 	// Authentication
-	Token    string `yaml:"token,omitempty"`    // For aria2c
-	Username string `yaml:"username,omitempty"` // For transmission
-	Password string `yaml:"password,omitempty"` // For transmission
+	Token    string `yaml:"token,omitempty" json:"token,omitempty"`       // For aria2c
+	Username string `yaml:"username,omitempty" json:"username,omitempty"` // For transmission
+	Password string `yaml:"password,omitempty" json:"password,omitempty"` // For transmission
 
-	AutoCleanUp bool `yaml:"autoCleanUp,omitempty"` // Option to automatically clean up completed tasks
+	AutoCleanUp bool `yaml:"autoCleanUp,omitempty" json:"autoCleanUp,omitempty"` // Option to automatically clean up completed tasks
 }
 
 // TaskConfig represents a single task configuration.
@@ -172,32 +172,19 @@ func LoadYAMLConfig(cfgPath string) (map[string]TaskConfig, error) {
 }
 
 // SaveYAMLConfig saves the task configurations back to the YAML file.
-// It acquires a write lock and performs an atomic write.
 func SaveYAMLConfig(cfgPath string, taskConfigs map[string]TaskConfig) error {
 	configLock.Lock()
 	defer configLock.Unlock()
-
-	// Ensure consistent map order for cleaner diffs (optional but good practice)
-	// Note: yaml.v3 generally preserves order, but explicit sorting might be needed
-	// if map iteration order becomes critical elsewhere.
 
 	data, err := yaml.Marshal(taskConfigs)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config to YAML: %w", err)
 	}
 
-	// Atomic write: write to temp file then rename
-	tempFile := cfgPath + ".tmp"
 	// Use 0600 for potentially sensitive config data
-	err = os.WriteFile(tempFile, data, 0600)
+	err = os.WriteFile(cfgPath, data, 0600)
 	if err != nil {
-		return fmt.Errorf("failed to write to temporary config file %s: %w", tempFile, err)
-	}
-
-	err = os.Rename(tempFile, cfgPath)
-	if err != nil {
-		_ = os.Remove(tempFile) // Clean up temp file
-		return fmt.Errorf("failed to rename temporary config file to %s: %w", cfgPath, err)
+		return fmt.Errorf("failed to write to config file %s: %w", cfgPath, err)
 	}
 
 	slog.Info("Configuration saved successfully via API", "path", cfgPath)

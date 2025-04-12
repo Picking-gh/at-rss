@@ -132,7 +132,7 @@ func main() {
 				slog.Error("Configure file watching error", "error", err)
 				return
 			}
-			if event.Has(fsnotify.Write) || event.Has(fsnotify.Remove) {
+			if event.Has(fsnotify.Write) {
 				if debounceTimer == nil {
 					debounceTimer = time.AfterFunc(debounceDuration, func() {
 						slog.Info("Reloading configure file...")

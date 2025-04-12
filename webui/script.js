@@ -14,36 +14,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- API Helper Functions ---
 
     async function apiFetch(url, options = {}) {
-        try {
-            const response = await fetch(url, options);
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-            }
-            // Check content type before parsing JSON
-            const contentType = response.headers.get("content-type");
-            if (contentType && contentType.indexOf("application/json") !== -1) {
-                return await response.json();
-            } else {
-                return await response.text(); // Return text for non-JSON responses (e.g., simple success messages)
-            }
-        } catch (error) {
-            console.error('API Fetch Error:', error);
-            alert(`API Error: ${error.message}`); // Simple error feedback
-            throw error; // Re-throw to handle in calling function if needed
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
         }
+        const contentType = response.headers.get("content-type");
+        return contentType?.includes("application/json")
+            ? await response.json()
+            : await response.text();
     }
 
     // --- Task List Management ---
 
     async function loadTasks() {
-        try {
-            currentTasks = await apiFetch('/api/tasks');
-            renderTaskList();
-            clearTaskDetailPanel();
-        } catch (error) {
+        currentTasks = await apiFetch('/api/tasks').catch(() => {
             taskListUl.innerHTML = '<li>Failed to load tasks.</li>';
-        }
+            return {};
+        });
+        renderTaskList();
+        clearTaskDetailPanel();
     }
 
     function renderTaskList() {
@@ -63,6 +53,9 @@ document.addEventListener('DOMContentLoaded', () => {
             button.dataset.taskName = taskName;
             if (taskName === selectedTaskName) {
                 button.classList.add('active');
+            }
+            if (currentTasks[taskName].isNew) {
+                button.classList.add('new-task');
             }
             button.addEventListener('click', () => selectTask(taskName));
             li.appendChild(button);
@@ -85,23 +78,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Helper to get current task context ---
     function getCurrentTaskContext() {
         const form = document.getElementById('task-form');
-        if (!form) {
-            console.warn("getCurrentTaskContext: Task form not found.");
-            return null;
-        }
-        const taskName = form.dataset.taskName;
-        const isNew = form.dataset.isNew === 'true'; // Ensure boolean conversion
+        if (!form) return null;
 
-        if (!taskName && !isNew) { // Allow empty taskName only if it's a new task form
-            console.warn("getCurrentTaskContext: Task name is missing from form data.");
+        const taskName = form.dataset.taskName;
+        const isNew = form.dataset.isNew === 'true';
+
+        if (!taskName && !isNew) {
             alert('Internal Error: Task context is missing. Please select a task or start adding a new one.');
             return null;
         }
 
         const taskConfig = currentTasks[taskName];
-
         if (!taskConfig && !isNew) {
-            console.error(`getCurrentTaskContext: Task config not found for existing task: ${taskName}`);
             alert(`Internal Error: Configuration for task "${taskName}" not found.`);
             return null;
         }
@@ -113,15 +101,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Task Detail Rendering ---
 
     function renderTaskDetail(taskName) {
-        // console.log(`Rendering details for task: ${taskName}`);
         const taskConfig = currentTasks[taskName];
         if (!taskConfig) {
             clearTaskDetailPanel();
             alert(`Task "${taskName}" not found in currentTasks.`);
-            console.error("Task config not found for:", taskName, "in", currentTasks); // Added log
             return;
         }
-        // console.log("Rendering with Task Config:", JSON.stringify(taskConfig, null, 2));
 
         taskFormContainer.innerHTML = '';
 
@@ -168,9 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         form.appendChild(actionDiv);
         taskFormContainer.appendChild(form);
 
-        // Add submit listener AFTER the form is in the DOM
         form.addEventListener('submit', handleFormSubmit);
-        // console.log("Form rendering complete for:", taskName);
     }
 
     // --- Form Element Creation Helpers ---
@@ -185,80 +168,59 @@ document.addEventListener('DOMContentLoaded', () => {
         return section;
     }
 
-    function createTextField(parent, id, label, value = '', readOnly = false) {
+    function createInputField(parent, id, label, options = {}) {
+        const { type = 'text', value = '', readOnly = false, min, placeholder } = options;
         const group = document.createElement('div');
         group.classList.add('form-group');
+
         const labelEl = document.createElement('label');
         labelEl.htmlFor = id;
         labelEl.textContent = label;
+
         const input = document.createElement('input');
-        input.type = 'text';
+        input.type = type;
         input.id = id;
         input.name = id;
         input.value = value;
         input.readOnly = readOnly;
-        if (readOnly) {
-            input.style.backgroundColor = '#eee';
-        }
+
+        if (min !== undefined) input.min = min;
+        if (placeholder !== undefined) input.placeholder = placeholder;
+        if (readOnly) input.style.backgroundColor = '#eee';
+
         group.appendChild(labelEl);
         group.appendChild(input);
         parent.appendChild(group);
         return input;
+    }
+
+    function createTextField(parent, id, label, value = '', readOnly = false, placeholder) {
+        return createInputField(parent, id, label, { type: 'text', value, readOnly, placeholder });
     }
 
     function createPasswordField(parent, id, label, value = '') {
-        const group = document.createElement('div');
-        group.classList.add('form-group');
-        const labelEl = document.createElement('label');
-        labelEl.htmlFor = id;
-        labelEl.textContent = label;
-        const input = document.createElement('input');
-        input.type = 'password';
-        input.id = id;
-        input.name = id;
-        input.value = value;
-        group.appendChild(labelEl);
-        group.appendChild(input);
-        parent.appendChild(group);
-        return input;
+        return createInputField(parent, id, label, { type: 'password', value });
     }
 
-
-    function createNumberField(parent, id, label, value = '', readOnly = false) {
-        const group = document.createElement('div');
-        group.classList.add('form-group');
-        const labelEl = document.createElement('label');
-        labelEl.htmlFor = id;
-        labelEl.textContent = label;
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.id = id;
-        input.name = id;
-        input.value = value;
-        input.min = 1; // Example: interval should be positive
-        input.readOnly = readOnly;
-        if (readOnly) {
-            input.style.backgroundColor = '#eee';
-        }
-        group.appendChild(labelEl);
-        group.appendChild(input);
-        parent.appendChild(group);
-        return input;
+    function createNumberField(parent, id, label, value = '', readOnly = false, placeholder) {
+        return createInputField(parent, id, label, { type: 'number', value, readOnly, min: 1, placeholder });
     }
 
     function createCheckboxField(parent, id, label, checked = false) {
         const group = document.createElement('div');
         group.classList.add('form-group', 'checkbox-group');
+
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.id = id;
         input.name = id;
         input.checked = checked;
+
         const labelEl = document.createElement('label');
         labelEl.htmlFor = id;
         labelEl.textContent = label;
-        group.appendChild(input);
-        group.appendChild(labelEl);
+
+        group.append(input, labelEl);
         parent.appendChild(group);
         return input;
     }
@@ -266,23 +228,24 @@ document.addEventListener('DOMContentLoaded', () => {
     function createSelectField(parent, id, label, options, selectedValue = '') {
         const group = document.createElement('div');
         group.classList.add('form-group');
+
         const labelEl = document.createElement('label');
         labelEl.htmlFor = id;
         labelEl.textContent = label;
+
         const select = document.createElement('select');
         select.id = id;
         select.name = id;
+
         options.forEach(opt => {
             const optionEl = document.createElement('option');
             optionEl.value = opt.value;
             optionEl.textContent = opt.text;
-            if (opt.value === selectedValue) {
-                optionEl.selected = true;
-            }
+            optionEl.selected = opt.value === selectedValue;
             select.appendChild(optionEl);
         });
-        group.appendChild(labelEl);
-        group.appendChild(select);
+
+        group.append(labelEl, select);
         parent.appendChild(group);
         return select;
     }
@@ -299,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addButton.type = 'button';
         addButton.textContent = `Add ${title.replace(' List', '')}`;
         addButton.classList.add('button', 'secondary-button', 'add-item-button');
-        addButton.style.marginTop = '10px';
+        // addButton.style.marginTop = '10px';
         addButton.addEventListener('click', () => addItemFunc(ul));
         section.appendChild(addButton);
         return ul;
@@ -329,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addDownloader(ul) {
-        // console.log("Add Downloader clicked");
+        // Add Downloader handler
         const context = getCurrentTaskContext();
         if (!context) return;
         const { taskName, isNew, taskConfig } = context;
@@ -343,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function editDownloader(index) {
-        // console.log("Edit Downloader clicked for index:", index);
+        // Edit Downloader handler
         const context = getCurrentTaskContext();
         if (!context) return;
         const { taskName } = context;
@@ -356,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function deleteDownloader(index) {
-        // console.log("Delete Downloader clicked for index:", index);
+        // Delete Downloader handler
         deleteTaskListItem('downloaders', index, `Are you sure you want to delete downloader #${index + 1}?`);
     }
 
@@ -457,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         removeFilterBtn.type = 'button';
         removeFilterBtn.textContent = 'Remove Filter Section';
         removeFilterBtn.classList.add('button', 'danger-button');
-        removeFilterBtn.style.marginTop = '10px';
+        // removeFilterBtn.style.marginTop = '10px';
         removeFilterBtn.addEventListener('click', () => {
             // Use generic toggle function
             toggleTaskSection('filter', null, 'Are you sure you want to remove the entire filter section?');
@@ -467,10 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderKeywordList(parent, title, keywords, listId, addFunc, deleteFunc) {
         const subSection = document.createElement('div');
-        subSection.style.marginBottom = '15px';
+        subSection.classList.add('form-subsection');
         const h4 = document.createElement('h4');
         h4.textContent = title;
-        h4.style.fontSize = '1.0em';
         subSection.appendChild(h4);
 
         const ul = document.createElement('ul');
@@ -577,7 +539,8 @@ document.addEventListener('DOMContentLoaded', () => {
         removeExtracterBtn.type = 'button';
         removeExtracterBtn.textContent = 'Remove Extracter Section';
         removeExtracterBtn.classList.add('button', 'danger-button');
-        removeExtracterBtn.style.marginTop = '10px';
+        removeExtracterBtn.id = "removeExtracterBtn";
+        // removeExtracterBtn.style.marginTop = '10px';
         removeExtracterBtn.addEventListener('click', () => {
             // Use generic toggle function
             toggleTaskSection('extracter', null, 'Are you sure you want to remove the extracter section?');
@@ -734,8 +697,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const { taskName, isNew: isNewTask, taskConfig: currentConfig } = context;
 
-        const formData = new FormData(form); // Easier way to get basic fields, but need manual handling for lists/objects
-
         // Construct the final TaskConfig object to be sent to the API
         // Start with the current state from `currentTasks` which reflects UI changes made via helpers.
         // Use deep clone to avoid modifying the original object directly before API call success.
@@ -796,7 +757,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Task must have at least one feed URL.');
             return;
         }
-        
+
         console.log("Submitting Task Config:", JSON.stringify(finalTaskConfig, null, 2));
 
         try {
@@ -971,20 +932,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const typeSelect = createSelectField(modalForm, 'dlType', 'Type *', typeOptions, downloaderData?.type || 'aria2c');
 
             // Common Fields
-            const hostInput = createTextField(modalForm, 'dlHost', 'Host', downloaderData?.host || '');
+            const hostInput = createTextField(modalForm, 'dlHost', 'Host', downloaderData?.host || '', false, "localhost");
 
             // Type-Specific Fields (initially hidden)
             const aria2cFields = document.createElement('div');
             aria2cFields.id = 'aria2c-fields';
-            const aria2cPortInput = createNumberField(aria2cFields, 'dlAria2cPort', 'Port', downloaderData?.port || '');
-            const aria2cRpcPathInput = createTextField(aria2cFields, 'dlAria2cRpcPath', 'RPC Path', downloaderData?.rpcPath || '');
+            const aria2cPortInput = createNumberField(aria2cFields, 'dlAria2cPort', 'Port', downloaderData?.port || '', false, 6800);
+            const aria2cRpcPathInput = createTextField(aria2cFields, 'dlAria2cRpcPath', 'RPC Path', downloaderData?.rpcPath || '', false, "/jsonrpc");
             const tokenInput = createTextField(aria2cFields, 'dlToken', 'Token', downloaderData?.token || '');
             modalForm.appendChild(aria2cFields);
 
             const transmissionFields = document.createElement('div');
             transmissionFields.id = 'transmission-fields';
-            const transPortInput = createNumberField(transmissionFields, 'dlTransPort', 'Port', downloaderData?.port || '');
-            const transRpcPathInput = createTextField(transmissionFields, 'dlTransRpcPath', 'RPC Path', downloaderData?.rpcPath || '');
+            const transPortInput = createNumberField(transmissionFields, 'dlTransPort', 'Port', downloaderData?.port || '', false, 9091);
+            const transRpcPathInput = createTextField(transmissionFields, 'dlTransRpcPath', 'RPC Path', downloaderData?.rpcPath || '', false, "/transmission/rpc");
             const usernameInput = createTextField(transmissionFields, 'dlUsername', 'Username', downloaderData?.username || '');
             const passwordInput = createPasswordField(transmissionFields, 'dlPassword', 'Password', downloaderData?.password || '');
             modalForm.appendChild(transmissionFields);
