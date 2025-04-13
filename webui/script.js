@@ -40,11 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
         taskListUl.innerHTML = ''; // Clear existing list
         const sortedTaskNames = Object.keys(currentTasks).sort();
 
-        if (sortedTaskNames.length === 0) {
-            taskListUl.innerHTML = '<li>No tasks configured yet.</li>';
-            return;
-        }
-
         sortedTaskNames.forEach(taskName => {
             const li = document.createElement('li');
             const button = document.createElement('button');
@@ -57,10 +52,23 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentTasks[taskName].isNew) {
                 button.classList.add('new-task');
             }
+            if (currentTasks[taskName].isModified) {
+                button.classList.add('modified-task');
+            }
             button.addEventListener('click', () => selectTask(taskName));
             li.appendChild(button);
             taskListUl.appendChild(li);
         });
+
+        const addLi = document.createElement('li');
+        addLi.classList.add('add-task-item');
+        const addButton = document.createElement('button');
+        addButton.id = 'add-task-btn';
+        addButton.textContent = '+';
+        addButton.classList.add('button', 'task-button', 'add-button');
+        addButton.addEventListener('click', showNewTaskForm);
+        addLi.appendChild(addButton);
+        taskListUl.appendChild(addLi);
     }
 
     function selectTask(taskName) {
@@ -88,11 +96,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
         }
 
-        const taskConfig = currentTasks[taskName];
-        if (!taskConfig && !isNew) {
+        // Ensure the task exists in currentTasks, especially for non-new tasks
+        if (!currentTasks[taskName] && !isNew) {
             alert(`Internal Error: Configuration for task "${taskName}" not found.`);
             return null;
         }
+        // If it's a new task and doesn't exist yet (e.g., during initial form setup), create a placeholder
+        if (!currentTasks[taskName] && isNew) {
+            currentTasks[taskName] = { isNew: true }; // Basic structure
+        }
+
+
+        const taskConfig = currentTasks[taskName];
+
 
         return { taskName, isNew, taskConfig };
     }
@@ -258,12 +274,18 @@ document.addEventListener('DOMContentLoaded', () => {
         items.forEach((item, index) => renderItemFunc(ul, item, index));
         section.appendChild(ul);
 
+        // Add drag and drop listeners to the list itself if it's draggable
+        if (listId === 'downloader-list' || listId === 'feed-url-list') {
+            ul.addEventListener('dragover', handleDragOver);
+            ul.addEventListener('drop', handleDrop);
+            ul.addEventListener('dragleave', handleDragLeave);
+        }
+
         const addButton = document.createElement('button');
         addButton.type = 'button';
-        addButton.textContent = `Add ${title.replace(' List', '')}`;
+        addButton.textContent = `Add ${title.replace(' List', '').replace(' URLs', ' URL')}`; // Make button text more specific
         addButton.classList.add('button', 'secondary-button', 'add-item-button');
-        // addButton.style.marginTop = '10px';
-        addButton.addEventListener('click', () => addItemFunc(ul));
+        addButton.addEventListener('click', () => addItemFunc(ul)); // Pass the UL element to the add function
         section.appendChild(addButton);
         return ul;
     }
@@ -288,17 +310,22 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const protocol = downloader.useHttps ? 'https://' : 'http://';
-        const port = downloader.port || defaultPorts[downloader.type] || 'default';
-        const rpcPath = downloader.rpcPath || defaultRpcPaths[downloader.type] || 'default';
+        const port = downloader.port || defaultPorts[downloader.type] || ''; // Default to empty if no type match
+        const rpcPath = downloader.rpcPath || defaultRpcPaths[downloader.type] || ''; // Default to empty
 
-        return `${protocol}${downloader.host || 'localhost'}:${port}${rpcPath}`;
+        return `${protocol}${downloader.host || 'localhost'}${port ? ':' + port : ''}${rpcPath}`;
     }
 
     function renderDownloaderItem(ul, downloader, index) {
         const li = document.createElement('li');
         li.dataset.index = index;
+        li.dataset.itemType = 'downloader'; // Identify item type
+        li.draggable = true; // Make it draggable
+        li.classList.add('draggable-item');
+        li.addEventListener('dragstart', handleDragStart);
+        li.addEventListener('dragend', handleDragEnd);
         li.innerHTML = `
-            <span><strong>Type:</strong> ${downloader.type} | <strong>RPC URL:</strong> ${getRpcUrl(downloader)}</span>
+            <span><span class="drag-handle">::</span> <strong>Type:</strong> ${downloader.type} | <strong>RPC URL:</strong> ${getRpcUrl(downloader)}</span>
             <div class="list-item-actions">
                 <button type="button" class="edit-downloader-btn button secondary-button">Edit</button>
                 <button type="button" class="delete-downloader-btn button danger-button">Del</button>
@@ -309,30 +336,21 @@ document.addEventListener('DOMContentLoaded', () => {
         ul.appendChild(li);
     }
 
-    function addDownloader(ul) {
-        // Add Downloader handler
-        const context = getCurrentTaskContext();
-        if (!context) return;
-        const { taskName, isNew, taskConfig } = context;
-        const targetConfig = taskConfig || (isNew ? currentTasks[taskName] : null);
-
-        if (targetConfig) {
-            openDownloaderModal();
-        } else {
-            console.error(`addDownloader: Could not find target config for task "${taskName}" (isNew: ${isNew})`);
-        }
+    function addDownloader() { // Doesn't need ul passed anymore
+        openDownloaderModal(); // Open modal to add new
     }
 
     function editDownloader(index) {
         // Edit Downloader handler
         const context = getCurrentTaskContext();
         if (!context) return;
-        const { taskName } = context;
-        const downloaderData = currentTasks[taskName]?.downloaders[index];
+        const { taskName, taskConfig } = context;
+        const downloaderData = taskConfig?.downloaders?.[index];
         if (downloaderData) {
             openDownloaderModal(downloaderData, index);
         } else {
             alert("Could not find downloader data to edit.");
+            console.error(`editDownloader: Index ${index} out of bounds or downloaders array missing for task ${taskName}`);
         }
     }
 
@@ -343,43 +361,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     function renderFeedSection(form, urls) {
-        const section = createFormSection(form, 'Feed URLs');
         const listId = 'feed-url-list';
-        const ul = document.createElement('ul');
-        ul.id = listId;
-        ul.classList.add('list-items');
-        urls.forEach((url, index) => renderFeedUrlItem(ul, url, index));
-        section.appendChild(ul);
-
-        const addForm = document.createElement('div');
-        addForm.classList.add('add-item-form');
-        const urlInput = document.createElement('input');
-        urlInput.type = 'url';
-        urlInput.placeholder = 'Enter new feed URL';
-        urlInput.id = 'new-feed-url';
-        const addButton = document.createElement('button');
-        addButton.type = 'button';
-        addButton.textContent = 'Add URL';
-        addButton.classList.add('button', 'secondary-button');
-        addButton.addEventListener('click', () => {
-            const newUrl = urlInput.value.trim();
-            if (newUrl) {
-                addFeedUrl(ul, newUrl);
-                urlInput.value = '';
-            } else {
-                alert('Please enter a valid URL.');
-            }
-        });
-        addForm.appendChild(urlInput);
-        addForm.appendChild(addButton);
-        section.appendChild(addForm);
+        createListSection(form, 'Feed URLs', urls, renderFeedUrlItem, addFeedUrlToList, listId); // Changed add function
     }
 
     function renderFeedUrlItem(ul, url, index) {
         const li = document.createElement('li');
         li.dataset.index = index;
+        li.dataset.itemType = 'feed'; // Identify item type
+        li.draggable = true; // Make it draggable
+        li.classList.add('draggable-item');
+        li.addEventListener('dragstart', handleDragStart);
+        li.addEventListener('dragend', handleDragEnd);
         li.innerHTML = `
-            <span>${url}</span>
+            <span><span class="drag-handle">::</span> ${url}</span>
             <div class="list-item-actions">
                  <button type="button" class="delete-feed-url-btn button danger-button">Del</button>
             </div>
@@ -388,24 +383,27 @@ document.addEventListener('DOMContentLoaded', () => {
         ul.appendChild(li);
     }
 
-    function addFeedUrl(ul, newUrl) {
-        // Use the generic add function
-        // Ensure the path exists before adding
+    // Renamed function to avoid conflict, handles adding via the input form
+    function addFeedUrlToList() {
         const context = getCurrentTaskContext();
         if (!context) return;
-        const { taskName, taskConfig, isNew } = context;
-        const targetConfig = taskConfig || (isNew ? currentTasks[taskName] : null);
+        const { taskConfig } = context; // No need for isNew here
 
-        if (targetConfig) {
-            if (!targetConfig.feed) {
-                targetConfig.feed = { URLs: [] };
+        const newUrl = prompt("Enter a feed URL:");
+        if (newUrl === null) {
+            return;
+        }
+        if (newUrl.trim()) {
+            // Ensure the path exists before adding using the generic function
+            if (!taskConfig.feed) {
+                taskConfig.feed = { URLs: [] };
             }
-            if (!targetConfig.feed.URLs) {
-                targetConfig.feed.URLs = [];
+            if (!taskConfig.feed.URLs) {
+                taskConfig.feed.URLs = [];
             }
-            addTaskListItem('feed.URLs', newUrl);
+            addTaskListItem('feed.URLs', newUrl); // Add to data and re-render
         } else {
-            console.error(`addFeedUrl: Could not find target config for task "${taskName}" (isNew: ${isNew})`);
+            alert('Please enter a valid URL.');
         }
     }
 
@@ -455,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const ul = document.createElement('ul');
         ul.id = listId;
-        ul.classList.add('list-items');
+        ul.classList.add('list-items'); // Keep class for styling, but not draggable
         keywords.forEach((keyword, index) => renderKeywordItem(ul, keyword, index, deleteFunc));
         subSection.appendChild(ul);
 
@@ -471,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addButton.addEventListener('click', () => {
             const newKeyword = keywordInput.value.trim();
             if (newKeyword) {
-                addFunc(ul, newKeyword);
+                addFunc(newKeyword); // Pass only the keyword to the add function
                 keywordInput.value = '';
             } else {
                 alert('Please enter a keyword.');
@@ -486,7 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderKeywordItem(ul, keyword, index, deleteFunc) {
         const li = document.createElement('li');
-        li.dataset.index = index;
+        li.dataset.index = index; // Store index for deletion
         li.innerHTML = `
             <span>${keyword}</span>
             <div class="list-item-actions">
@@ -497,39 +495,20 @@ document.addEventListener('DOMContentLoaded', () => {
         ul.appendChild(li);
     }
 
-    function addIncludeKeyword(ul, keyword) {
-        // Ensure filter and include array exist before adding
-        const context = getCurrentTaskContext();
-        if (!context) return;
-        const { taskName, taskConfig, isNew } = context;
-        const targetConfig = taskConfig || (isNew ? currentTasks[taskName] : null);
-
-        if (targetConfig?.filter) {
-            if (!targetConfig.filter.include) targetConfig.filter.include = [];
-            addTaskListItem('filter.include', keyword);
-        } else {
-            console.warn(`addIncludeKeyword: Filter section does not exist for task "${taskName}". Cannot add keyword.`);
-        }
+    function addIncludeKeyword(keyword) {
+        addTaskListItem('filter.include', keyword);
     }
+
     function deleteIncludeKeyword(index) {
-        deleteTaskListItem('filter.include', index, 'Delete this include keyword?');
+        deleteTaskListItem('filter.include', index, 'Are you sure you want to delete this include keyword?');
     }
-    function addExcludeKeyword(ul, keyword) {
-        // Ensure filter and exclude array exist before adding
-        const context = getCurrentTaskContext();
-        if (!context) return;
-        const { taskName, taskConfig, isNew } = context;
-        const targetConfig = taskConfig || (isNew ? currentTasks[taskName] : null);
 
-        if (targetConfig?.filter) {
-            if (!targetConfig.filter.exclude) targetConfig.filter.exclude = [];
-            addTaskListItem('filter.exclude', keyword);
-        } else {
-            console.warn(`addExcludeKeyword: Filter section does not exist for task "${taskName}". Cannot add keyword.`);
-        }
+    function addExcludeKeyword(keyword) {
+        addTaskListItem('filter.exclude', keyword);
     }
+
     function deleteExcludeKeyword(index) {
-        deleteTaskListItem('filter.exclude', index, 'Delete this exclude keyword?');
+        deleteTaskListItem('filter.exclude', index, 'Are you sure you want to delete this exclude keyword?');
     }
 
 
@@ -541,7 +520,6 @@ document.addEventListener('DOMContentLoaded', () => {
             addButton.textContent = 'Add Extracter';
             addButton.classList.add('button', 'secondary-button');
             addButton.addEventListener('click', () => {
-                // Use generic toggle function
                 toggleTaskSection('extracter', { tag: 'link', pattern: '' });
             });
             section.appendChild(addButton);
@@ -558,147 +536,151 @@ document.addEventListener('DOMContentLoaded', () => {
         removeExtracterBtn.textContent = 'Remove Extracter Section';
         removeExtracterBtn.classList.add('button', 'danger-button');
         removeExtracterBtn.id = "removeExtracterBtn";
-        // removeExtracterBtn.style.marginTop = '10px';
         removeExtracterBtn.addEventListener('click', () => {
-            // Use generic toggle function
             toggleTaskSection('extracter', null, 'Are you sure you want to remove the extracter section?');
         });
         section.appendChild(removeExtracterBtn);
     }
-    // --- Generic Task Modification Helpers ---
 
-    // Helper to get nested property value using dot notation string
+    // --- Generic Data Manipulation Helpers ---
+
+    // Helper to safely get a nested property
     function getNestedProperty(obj, path) {
-        // Handle cases where obj is null/undefined early
-        if (!obj) return undefined;
-        return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+        if (!obj || !path) return undefined;
+        const parts = path.split('.');
+        let current = obj;
+        for (const part of parts) {
+            if (current === null || current === undefined) return undefined;
+            current = current[part];
+        }
+        return current;
     }
 
-    // Helper to set nested property value using dot notation string
-    // Creates path if it doesn't exist
+    // Helper to safely set a nested property, creating objects/arrays if needed
     function setNestedProperty(obj, path, value) {
+        if (!obj || !path) return;
         const parts = path.split('.');
         let current = obj;
         for (let i = 0; i < parts.length - 1; i++) {
             const part = parts[i];
-            // Create object or array if path segment doesn't exist or is not the correct type
-            if (current[part] === undefined || current[part] === null || typeof current[part] !== 'object') {
-                // Look ahead to see if the next part implies an array index (though we don't use indices in paths here)
-                // For simplicity, always create objects. If an array is needed, it should be initialized explicitly.
-                current[part] = {};
+            if (current[part] === undefined || current[part] === null) {
+                // Look ahead to see if next part implies an array index
+                const nextPart = parts[i + 1];
+                current[part] = /^\d+$/.test(nextPart) ? [] : {};
             }
             current = current[part];
         }
-        // Ensure the final part target exists before setting the value
-        if (typeof current === 'object' && current !== null) {
-            current[parts[parts.length - 1]] = value;
-        } else {
-            console.error(`setNestedProperty: Cannot set property on non-object at path "${path}"`);
-        }
+        current[parts[parts.length - 1]] = value;
     }
 
-
-    // Generic function to add an item to a list within the current task config
+    // Generic function to add an item to a list within the current task's config
     function addTaskListItem(itemPath, value) {
         const context = getCurrentTaskContext();
         if (!context) return;
-        const { taskName, isNew, taskConfig } = context;
+        const { taskName, taskConfig } = context;
 
-        // Use taskConfig for existing tasks, or the temporary currentTasks[taskName] for new ones
-        const targetConfig = taskConfig || (isNew ? currentTasks[taskName] : null);
-        if (!targetConfig) {
-            console.error(`addTaskListItem: Could not find target config for task "${taskName}" (isNew: ${isNew})`);
-            return;
-        }
-
-        let list = getNestedProperty(targetConfig, itemPath);
-
-        // Ensure the list exists and is an array
-        if (!Array.isArray(list)) {
-            console.warn(`addTaskListItem: Path "${itemPath}" did not resolve to an array. Initializing.`);
-            // Attempt to initialize the path up to the array
-            const pathParts = itemPath.split('.');
-            const arrayName = pathParts.pop();
-            const parentPath = pathParts.join('.');
-            let parentObj = targetConfig;
-            if (parentPath) {
-                parentObj = getNestedProperty(targetConfig, parentPath);
-                if (!parentObj || typeof parentObj !== 'object') {
-                    // Need to create the parent structure
-                    setNestedProperty(targetConfig, parentPath, {});
-                    parentObj = getNestedProperty(targetConfig, parentPath);
-                }
-            }
-            if (!parentObj || typeof parentObj !== 'object') {
-                console.error(`addTaskListItem: Could not create/find parent object for path "${itemPath}"`);
+        const itemsArray = getNestedProperty(taskConfig, itemPath);
+        if (!Array.isArray(itemsArray)) {
+            console.error(`addTaskListItem: Path "${itemPath}" does not resolve to an array in task "${taskName}".`);
+            // Attempt to initialize it if possible? Or just error out.
+            // Let's try initializing if the parent exists.
+            const parentPath = itemPath.substring(0, itemPath.lastIndexOf('.'));
+            const parentObj = parentPath ? getNestedProperty(taskConfig, parentPath) : taskConfig;
+            if (parentObj) {
+                const arrayName = itemPath.substring(itemPath.lastIndexOf('.') + 1);
+                parentObj[arrayName] = []; // Initialize as empty array
+                console.log(`Initialized array at path: ${itemPath}`);
+            } else {
+                console.error(`Cannot initialize array, parent path "${parentPath}" not found.`);
                 return;
             }
-            // Initialize the array
-            parentObj[arrayName] = [];
-            list = parentObj[arrayName];
-            // Ensure the list is set back onto the main config object if nested path creation happened
-            setNestedProperty(targetConfig, itemPath, list); // Ensure the newly created array is set
-        }
-
-
-        list.push(value);
-        renderTaskDetail(taskName);
-    }
-
-    // Generic function to delete an item from a list within the current task config
-    function deleteTaskListItem(itemPath, index, confirmMessage) {
-        const context = getCurrentTaskContext();
-        if (!context) return;
-        const { taskName, isNew, taskConfig } = context;
-
-        const targetConfig = taskConfig || (isNew ? currentTasks[taskName] : null);
-        if (!targetConfig) {
-            console.error(`deleteTaskListItem: Could not find target config for task "${taskName}" (isNew: ${isNew})`);
-            return;
-        }
-
-        const list = getNestedProperty(targetConfig, itemPath);
-
-        if (!Array.isArray(list)) {
-            console.error(`deleteTaskListItem: Path "${itemPath}" did not resolve to an array.`);
-            return;
-        }
-
-        if (index < 0 || index >= list.length) {
-            console.error(`deleteTaskListItem: Invalid index ${index} for path "${itemPath}".`);
-            return;
-        }
-
-        if (confirm(confirmMessage || `Are you sure you want to delete this item?`)) {
-            list.splice(index, 1);
-            renderTaskDetail(taskName);
-        }
-    }
-
-    // Generic function to add or remove an entire section (object property) from the task config
-    function toggleTaskSection(sectionName, defaultData = null, confirmMessage = null) {
-        const context = getCurrentTaskContext();
-        if (!context) return;
-        const { taskName, isNew, taskConfig } = context;
-
-        const targetConfig = taskConfig || (isNew ? currentTasks[taskName] : null);
-        if (!targetConfig) {
-            console.error(`toggleTaskSection: Could not find target config for task "${taskName}" (isNew: ${isNew})`);
-            return;
-        }
-
-        if (defaultData !== null) {
-            // Add section
-            targetConfig[sectionName] = defaultData;
-            renderTaskDetail(taskName);
+            // Re-fetch the (now initialized) array
+            const newItemsArray = getNestedProperty(taskConfig, itemPath);
+            if (!Array.isArray(newItemsArray)) {
+                console.error("Failed to initialize array.");
+                return;
+            }
+            newItemsArray.push(value);
         } else {
-            // Remove section
-            if (confirmMessage && !confirm(confirmMessage)) {
-                return;
-            }
-            delete targetConfig[sectionName];
-            renderTaskDetail(taskName);
+            itemsArray.push(value);
         }
+
+
+        console.log(`Added item to ${itemPath}:`, value);
+        // Re-render the whole task detail to reflect the change
+        renderTaskDetail(taskName);
+        // Mark task as modified
+        if (!currentTasks[taskName].isNew) {
+            currentTasks[taskName].isModified = true;
+            renderTaskList();
+        }
+        // const saveButton = document.querySelector('#task-form .primary-button');
+        // if (saveButton && !saveButton.textContent.includes('*')) {
+        //     saveButton.textContent += '*';
+        // }
+    }
+
+    // Generic function to delete an item from a list within the current task's config
+    function deleteTaskListItem(itemPath, index, confirmMessage) {
+        if (!confirm(confirmMessage)) return;
+
+        const context = getCurrentTaskContext();
+        if (!context) return;
+        const { taskName, taskConfig } = context;
+
+        const itemsArray = getNestedProperty(taskConfig, itemPath);
+        if (!Array.isArray(itemsArray)) {
+            console.error(`deleteTaskListItem: Path "${itemPath}" does not resolve to an array in task "${taskName}".`);
+            return;
+        }
+
+        if (index >= 0 && index < itemsArray.length) {
+            itemsArray.splice(index, 1);
+            console.log(`Deleted item at index ${index} from ${itemPath}`);
+            // Re-render the whole task detail
+            renderTaskDetail(taskName);
+            // Mark task as modified
+            if (!currentTasks[taskName].isNew) {
+                currentTasks[taskName].isModified = true;
+                renderTaskList();
+            }
+            // const saveButton = document.querySelector('#task-form .primary-button');
+            // if (saveButton && !saveButton.textContent.includes('*')) {
+            //     saveButton.textContent += '*';
+            // }
+        } else {
+            console.error(`deleteTaskListItem: Invalid index ${index} for path "${itemPath}" in task "${taskName}".`);
+        }
+    }
+
+    // Generic function to add/remove an entire section (object) from the task config
+    function toggleTaskSection(sectionName, defaultData = null, confirmMessage = null) {
+        if (confirmMessage && !confirm(confirmMessage)) return;
+
+        const context = getCurrentTaskContext();
+        if (!context) return;
+        const { taskName, taskConfig } = context;
+
+        if (taskConfig[sectionName] === undefined || taskConfig[sectionName] === null) {
+            // Add the section
+            taskConfig[sectionName] = defaultData;
+            console.log(`Added section "${sectionName}"`);
+        } else {
+            // Remove the section
+            delete taskConfig[sectionName];
+            console.log(`Removed section "${sectionName}"`);
+        }
+        // Re-render the detail panel
+        renderTaskDetail(taskName);
+        // Mark task as modified
+        if (!currentTasks[taskName].isNew) {
+            currentTasks[taskName].isModified = true;
+            renderTaskList();
+        }
+        // const saveButton = document.querySelector('#task-form .primary-button');
+        // if (saveButton && !saveButton.textContent.includes('*')) {
+        //     saveButton.textContent += '*';
+        // }
     }
 
 
@@ -707,28 +689,46 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleFormSubmit(event) { // Keep async as it calls apiFetch
         event.preventDefault();
         const form = event.target;
-        // Use helper function to get context
-        const context = getCurrentTaskContext();
-        if (!context) {
-            console.error("handleFormSubmit: Failed to get task context.");
-            return;
+        const taskName = form.dataset.taskName;
+        const isNew = form.dataset.isNew === 'true';
+
+        const context = getCurrentTaskContext(); // Get current data
+        if (!context) return; // Should not happen if form exists, but check anyway
+        const { taskConfig: currentConfig } = context;
+
+        // Construct the final task config from the form and existing data
+        const finalTaskConfig = {
+            // Start with existing non-form-related data if editing
+            ...(isNew ? {} : currentConfig),
+            // Overwrite with form values
+            interval: parseInt(form.elements.interval.value, 10) || 10,
+            // Downloaders and Feed URLs are managed by their respective add/delete/drag functions
+            // directly modifying currentTasks[taskName].downloaders and currentTasks[taskName].feed.URLs
+            downloaders: currentConfig.downloaders || [], // Get potentially reordered array
+            feed: {
+                URLs: currentConfig.feed?.URLs || [] // Get potentially reordered array
+            },
+            // Filter section
+            filter: undefined, // Start with undefined
+            // Extracter section
+            extracter: undefined, // Start with undefined
+        };
+
+        // Populate Filter if section exists
+        const includeList = form.querySelector('#include-keywords');
+        const excludeList = form.querySelector('#exclude-keywords');
+        if (includeList || excludeList) {
+            finalTaskConfig.filter = {
+                include: currentConfig.filter?.include || [], // Get potentially modified array
+                exclude: currentConfig.filter?.exclude || []
+            };
         }
-        const { taskName, isNew: isNewTask, taskConfig: currentConfig } = context;
-
-        // Construct the final TaskConfig object to be sent to the API
-        // Start with the current state from `currentTasks` which reflects UI changes made via helpers.
-        // Use deep clone to avoid modifying the original object directly before API call success.
-        const baseConfig = currentConfig || (isNewTask ? currentTasks[taskName] : null);
-        if (!baseConfig) {
-            console.error(`handleFormSubmit: Base config not found for task "${taskName}" (isNew: ${isNewTask})`);
-            alert('Internal Error: Could not prepare task data for saving.');
-            return;
+        // Clean up Filter: remove empty include/exclude arrays and the filter object itself if empty
+        if (finalTaskConfig.filter) {
+            if (finalTaskConfig.filter.include?.length === 0) delete finalTaskConfig.filter.include;
+            if (finalTaskConfig.filter.exclude?.length === 0) delete finalTaskConfig.filter.exclude;
+            if (Object.keys(finalTaskConfig.filter).length === 0) delete finalTaskConfig.filter;
         }
-        const finalTaskConfig = JSON.parse(JSON.stringify(baseConfig));
-
-
-        // Update basic fields directly from the form
-        finalTaskConfig.interval = parseInt(form.querySelector('#interval')?.value, 10) || 10;
 
         // Update Extracter directly from form fields if the section exists
         const extracterTagEl = form.querySelector('#extracterTag');
@@ -740,190 +740,104 @@ document.addEventListener('DOMContentLoaded', () => {
                     tag: extracterTagEl.value,
                     pattern: pattern
                 };
-            } else {
-                // Remove extracter if pattern is empty
-                delete finalTaskConfig.extracter;
             }
-        } else {
-            // Ensure extracter is removed if the section wasn't rendered
-            delete finalTaskConfig.extracter;
         }
-
-
-        // Clean up Filter: remove empty include/exclude arrays and the filter object itself if empty
-        if (finalTaskConfig.filter) {
-            if (finalTaskConfig.filter.include?.length === 0) delete finalTaskConfig.filter.include;
-            if (finalTaskConfig.filter.exclude?.length === 0) delete finalTaskConfig.filter.exclude;
-            if (Object.keys(finalTaskConfig.filter).length === 0) delete finalTaskConfig.filter;
-        }
-
-        // Clean up Feed: Ensure it's not just an empty object if URLs were deleted
-        if (finalTaskConfig.feed && (!finalTaskConfig.feed.URLs || finalTaskConfig.feed.URLs.length === 0)) {
-            delete finalTaskConfig.feed;
-        }
-
-
-        delete finalTaskConfig.isTemporary;
-
 
         // --- Basic Validation (using finalTaskConfig) ---
-        if (!finalTaskConfig.downloaders || finalTaskConfig.downloaders.length === 0) {
-            alert('Task must have at least one downloader.');
-            return;
-        }
-        if (!finalTaskConfig.feed || !finalTaskConfig.feed.URLs || finalTaskConfig.feed.URLs.length === 0) {
+        if (!finalTaskConfig.feed?.URLs?.length) {
             alert('Task must have at least one feed URL.');
             return;
         }
+        if (!finalTaskConfig.downloaders?.length) {
+            alert('Task must have at least one downloader.');
+            return;
+        }
 
-        console.log("Submitting Task Config:", JSON.stringify(finalTaskConfig, null, 2));
+        console.log("Submitting task data:", taskName, finalTaskConfig);
 
         try {
             let result;
-            if (isNewTask) {
-                // Task name should already be validated and set in context
-                if (!taskName) {
-                    alert('Internal Error: New task name is missing during submission.');
-                    return;
-                }
-                // Use POST for new task
+            if (isNew) {
+                // Create new task
                 result = await apiFetch('/api/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: taskName, config: finalTaskConfig })
                 });
                 alert(`Task "${taskName}" created successfully!`);
-                selectedTaskName = taskName;
+                delete finalTaskConfig.isNew; // Remove the temporary new flag
             } else {
-                // Use PUT for existing task
+                // Update existing task
                 result = await apiFetch(`/api/tasks/${taskName}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(finalTaskConfig)
                 });
                 alert(`Task "${taskName}" updated successfully!`);
+                delete finalTaskConfig.isModified;
             }
-            console.log("API Response:", result);
-            // await loadTasks();
-            // Re-select the task after reload
-            if (selectedTaskName && currentTasks[selectedTaskName]) {
-                delete currentTasks[selectedTaskName].isNew;
-                selectTask(selectedTaskName);
-            } else {
-                clearTaskDetailPanel();
-            }
+            console.log('API Response:', result);
+            // Update local state and UI
+            currentTasks[taskName] = finalTaskConfig; // Update local cache with saved data
+            selectedTaskName = taskName; // Ensure it remains selected
+            renderTaskList(); // Update list (e.g., remove new task indicator)
+            renderTaskDetail(taskName); // Re-render detail panel with saved data (removes '*' from save button)
 
         } catch (error) {
-            // Error already handled by apiFetch
-            console.error("Failed to save task:", error);
+            console.error('Failed to save task:', error);
+            alert(`Error saving task "${taskName}": ${error.message}`);
         }
     }
 
     async function deleteTask(taskName) {
-        if (confirm(`Are you sure you want to delete the task "${taskName}"? This cannot be undone.`)) {
+        if (!confirm(`Are you sure you want to delete the task "${taskName}"?`)) {
+            return;
+        }
+
+        if (!currentTasks[taskName].isNew) {
             try {
-                const result = await apiFetch(`/api/tasks/${taskName}`, { method: 'DELETE' });
-                console.log("Delete Response:", result);
+                await apiFetch(`/api/tasks/${taskName}`, { method: 'DELETE' });
                 alert(`Task "${taskName}" deleted successfully!`);
-                selectedTaskName = null;
-                await loadTasks();
-                clearTaskDetailPanel();
             } catch (error) {
-                console.error("Failed to delete task:", error);
+                console.error('Failed to delete task:', error);
+                alert(`Error deleting task "${taskName}": ${error.message}`);
             }
         }
+        // Remove from local state and update UI
+        delete currentTasks[taskName];
+        clearTaskDetailPanel(); // Clear detail panel
+        renderTaskList(); // Update task list
     }
 
     // --- Add New Task ---
+
     function showNewTaskForm() {
-        selectedTaskName = null;
-        renderTaskList();
-        taskFormContainer.innerHTML = '';
+        const newTaskName = prompt("Enter a name for the new task:");
+        if (!newTaskName || !newTaskName.trim()) {
+            alert("Task name cannot be empty.");
+            return;
+        }
+        const trimmedName = newTaskName.trim();
+        if (currentTasks[trimmedName]) {
+            alert(`Task "${trimmedName}" already exists.`);
+            return;
+        }
 
-        const form = document.createElement('form');
-        form.id = 'task-form';
-        form.dataset.isNew = 'true';
+        // Create a temporary placeholder in currentTasks
+        currentTasks[trimmedName] = {
+            isNew: true, // Flag to indicate it's a new task
+            interval: 10, // Default interval
+            downloaders: [],
+            feed: { URLs: [] },
+        };
 
-        // --- Basic Info ---
-        const infoSection = createFormSection(form, 'New Task Info');
-        const newTaskNameInput = createTextField(infoSection, 'newTaskName', 'Task Name *', '', false);
-        newTaskNameInput.addEventListener('change', function (event) {
-            const newTaskNameValue = event.target.value.trim();
-            const existingTaskNames = Object.keys(currentTasks);
-            const createButton = form.querySelector('button[type="submit"]');
-
-            // Clear previous task name from dataset and potentially from currentTasks
-            const previousTaskName = form.dataset.taskName;
-            if (previousTaskName && previousTaskName !== newTaskNameValue && currentTasks[previousTaskName]?.isTemporary) {
-                delete currentTasks[previousTaskName];
-            }
-            form.removeAttribute('data-task-name');
-
-            if (newTaskNameValue === '') {
-                newTaskNameInput.setCustomValidity('Task name cannot be empty.');
-                if (createButton) createButton.disabled = true;
-            } else if (existingTaskNames.includes(newTaskNameValue)) {
-                newTaskNameInput.setCustomValidity(`Task name "${newTaskNameValue}" already exists.`);
-                if (createButton) createButton.disabled = true;
-            } else {
-                newTaskNameInput.setCustomValidity('');
-                form.dataset.taskName = newTaskNameValue;
-                // Create the temporary task object if it doesn't exist
-                if (!currentTasks[newTaskNameValue]) {
-                    currentTasks[newTaskNameValue] = {
-                        interval: parseInt(form.querySelector('#interval')?.value, 10) || 10, // Get interval from form or default
-                        downloaders: [],
-                        feed: { URLs: [] }, // Initialize feed structure
-                        filter: null,
-                        extracter: null,
-                        isTemporary: true,
-                        isNew: true
-                    };
-                    // console.log(`Created temporary task object for: ${newTaskNameValue}`);
-                }
-                if (createButton) createButton.disabled = false;
-            }
-            newTaskNameInput.reportValidity();
-        });
-        // Initially disable create button until a valid name is entered
-        const initialCreateButton = form.querySelector('button[type="submit"]');
-        if (initialCreateButton) initialCreateButton.disabled = true;
-        createNumberField(infoSection, 'interval', 'Fetch Interval (minutes)', 10);
-
-        // --- Initialize empty sections for user to add items ---
-        renderDownloaderSection(form, []);
-        renderFeedSection(form, []);
-        renderFilterSection(form, null);
-        renderExtracterSection(form, null);
-
-
-        // --- Action Buttons ---
-        const actionDiv = document.createElement('div');
-        actionDiv.classList.add('action-buttons');
-
-        const createButton = document.createElement('button');
-        createButton.type = 'submit';
-        createButton.textContent = 'Create Task';
-        createButton.classList.add('button', 'primary-button');
-        actionDiv.appendChild(createButton);
-
-        const cancelButton = document.createElement('button');
-        cancelButton.type = 'button';
-        cancelButton.textContent = 'Cancel';
-        cancelButton.classList.add('button', 'secondary-button');
-        cancelButton.addEventListener('click', clearTaskDetailPanel);
-        actionDiv.appendChild(cancelButton);
-
-
-        form.appendChild(actionDiv);
-        taskFormContainer.appendChild(form);
-
-        form.addEventListener('submit', handleFormSubmit);
-        newTaskNameInput.focus();
+        selectedTaskName = trimmedName; // Select the new task
+        renderTaskList(); // Update list to show the new task (maybe with an indicator)
+        renderTaskDetail(trimmedName); // Render the form for the new task
     }
 
-
     // --- Modal Management ---
+
     function openModal(title, contentGenerator) {
         modalTitle.textContent = title;
         modalBody.innerHTML = ''; // Clear previous content
@@ -933,141 +847,345 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeModal() {
         modal.style.display = 'none';
-        modalBody.innerHTML = ''; // Clear content
+        modalBody.innerHTML = ''; // Clear content on close
     }
 
-    // Modal for Downloader Add/Edit
+    // Close modal if clicked outside the content area
+    window.onclick = function (event) {
+        if (event.target == modal) {
+            closeModal();
+        }
+    }
+    // Close modal with the close button
+    closeModalBtn.onclick = closeModal;
+
+
+    // --- Downloader Modal Specific Logic ---
+
     function openDownloaderModal(downloaderData = null, index = null) {
         const isEditing = downloaderData !== null && index !== null;
         const title = isEditing ? `Edit Downloader #${index + 1}` : 'Add New Downloader';
 
         openModal(title, (body) => {
-            const modalForm = document.createElement('form');
-            modalForm.id = 'downloader-modal-form';
+            body.innerHTML = ''; // Clear previous content
+
+            const form = document.createElement('form');
+            form.id = 'downloader-form';
+
+            // Hidden input for index
+            const indexInput = document.createElement('input');
+            indexInput.type = 'hidden';
+            indexInput.name = 'downloaderIndex';
+            indexInput.value = index ?? '';
+            form.appendChild(indexInput);
+
+            // Initial values
+            const type = downloaderData?.type || 'aria2c';
+            const host = downloaderData?.host || 'localhost';
+            const useHttps = downloaderData?.useHttps || false;
+            const autoCleanUp = downloaderData?.autoCleanUp || false;
 
             // Type Select
-            const typeOptions = [{ value: 'aria2c', text: 'Aria2c' }, { value: 'transmission', text: 'Transmission' }];
-            const typeSelect = createSelectField(modalForm, 'dlType', 'Type *', typeOptions, downloaderData?.type || 'aria2c');
+            const downloaderTypeOptions = [
+                { value: 'aria2c', text: 'Aria2c' },
+                { value: 'transmission', text: 'Transmission' }
+            ];
+            const typeSelect = createSelectField(form, 'downloaderType', 'Type', downloaderTypeOptions, type);
 
-            // Common Fields
-            const hostInput = createTextField(modalForm, 'dlHost', 'Host', downloaderData?.host || '', false, "localhost");
+            // Host
+            createTextField(form, 'downloaderHost', 'Host', host);
 
-            // Type-Specific Fields (initially hidden)
-            const aria2cFields = document.createElement('div');
-            aria2cFields.id = 'aria2c-fields';
-            const aria2cPortInput = createNumberField(aria2cFields, 'dlAria2cPort', 'Port', downloaderData?.port || '', false, 6800);
-            const aria2cRpcPathInput = createTextField(aria2cFields, 'dlAria2cRpcPath', 'RPC Path', downloaderData?.rpcPath || '', false, "/jsonrpc");
-            const tokenInput = createTextField(aria2cFields, 'dlToken', 'Token', downloaderData?.token || '');
-            modalForm.appendChild(aria2cFields);
+            // --- Aria2c Specific Fields ---
+            const aria2cFieldsDiv = document.createElement('div');
+            aria2cFieldsDiv.id = 'aria2c-fields';
+            createNumberField(aria2cFieldsDiv, 'downloaderAria2cPort', 'Port (optional)', downloaderData?.port || '', false, 'e.g., 6800');
+            createTextField(aria2cFieldsDiv, 'downloaderAria2cRpcPath', 'RPC Path (optional)', downloaderData?.rpcPath || '', false, 'e.g., /jsonrpc');
+            createTextField(aria2cFieldsDiv, 'downloaderAria2cToken', 'Token (optional)', downloaderData?.token || '');
+            form.appendChild(aria2cFieldsDiv);
 
-            const transmissionFields = document.createElement('div');
-            transmissionFields.id = 'transmission-fields';
-            const transPortInput = createNumberField(transmissionFields, 'dlTransPort', 'Port', downloaderData?.port || '', false, 9091);
-            const transRpcPathInput = createTextField(transmissionFields, 'dlTransRpcPath', 'RPC Path', downloaderData?.rpcPath || '', false, "/transmission/rpc");
-            const usernameInput = createTextField(transmissionFields, 'dlUsername', 'Username', downloaderData?.username || '');
-            const passwordInput = createPasswordField(transmissionFields, 'dlPassword', 'Password', downloaderData?.password || '');
-            modalForm.appendChild(transmissionFields);
+            // --- Transmission Specific Fields ---
+            const transmissionFieldsDiv = document.createElement('div');
+            transmissionFieldsDiv.id = 'transmission-fields';
+            createNumberField(transmissionFieldsDiv, 'downloaderTrasnPort', 'Port (optional)', downloaderData?.port || '', false, 'e.g., 9091');
+            createTextField(transmissionFieldsDiv, 'downloaderTrasnRpcPath', 'RPC Path (optional)', downloaderData?.rpcPath || '', false, 'e.g., /transmission/rpc');
+            createTextField(transmissionFieldsDiv, 'downloaderTrasnUsername', 'Username (optional)', downloaderData?.username || '');
+            createPasswordField(transmissionFieldsDiv, 'downloaderTrasnSecret', 'Secret/Password (optional)', downloaderData?.password || '');
+            form.appendChild(transmissionFieldsDiv);
 
-            // Common Fields
-            const useHttpsCheckbox = createCheckboxField(modalForm, 'dlUseHttps', 'Use HTTPS', downloaderData?.useHttps || false);
-            const autoCleanUpCheckbox = createCheckboxField(modalForm, 'dlAutoCleanUp', 'Auto CleanUp', downloaderData?.autoCleanUp || false);
+            // Common Checkboxes
+            createCheckboxField(form, 'downloaderUseHttps', 'Use HTTPS', useHttps);
+            createCheckboxField(form, 'downloaderAutoCleanUp', 'Auto CleanUp', autoCleanUp);
 
-            // Function to toggle visibility based on selected type
-            const toggleSpecificFields = () => {
-                const selectedType = typeSelect.value;
-                aria2cFields.style.display = selectedType === 'aria2c' ? 'block' : 'none';
-                transmissionFields.style.display = selectedType === 'transmission' ? 'block' : 'none';
-            };
+            // Action Buttons
+            const actionDiv = document.createElement('div');
+            actionDiv.classList.add('action-buttons');
+            const submitButton = document.createElement('button');
+            submitButton.type = 'submit';
+            submitButton.textContent = isEditing ? 'Save Downloader' : 'Add Downloader';
+            submitButton.classList.add('button', 'primary-button');
+            actionDiv.appendChild(submitButton);
+            form.appendChild(actionDiv);
 
-            typeSelect.addEventListener('change', toggleSpecificFields);
-            toggleSpecificFields();
+            body.appendChild(form); // Add the constructed form to the modal body
 
-            // Save Button
-            const saveBtn = document.createElement('button');
-            saveBtn.type = 'submit';
-            saveBtn.textContent = isEditing ? 'Save Downloader Changes' : 'Add Downloader';
-            saveBtn.classList.add('button', 'primary-button');
-            modalForm.appendChild(saveBtn);
+            // --- Event Listeners ---
 
-            modalForm.addEventListener('submit', (e) => {
+            // Form Submission
+            form.addEventListener('submit', (e) => {
                 e.preventDefault();
+                const formData = new FormData(form); // Use the created form element
+                const indexToEdit = formData.get('downloaderIndex') ? parseInt(formData.get('downloaderIndex'), 10) : null;
+
                 const newDownloader = {
-                    type: typeSelect.value,
-                    host: hostInput.value.trim() || undefined, // Use undefined for empty optional fields
-                    useHttps: useHttpsCheckbox.checked || undefined,
-                    autoCleanUp: autoCleanUpCheckbox.checked || undefined,
+                    type: formData.get('downloaderType'),
+                    host: formData.get('downloaderHost').trim() || 'localhost',
+                    useHttps: formData.get('downloaderUseHttps') === 'on',
+                    autoCleanUp: formData.get('downloaderAutoCleanUp') === 'on'
                 };
-                // Add type-specific fields
+
                 if (newDownloader.type === 'aria2c') {
-                    newDownloader.port = parseInt(aria2cPortInput.value, 10) || undefined,
-                        newDownloader.rpcPath = aria2cRpcPathInput.value.trim() || undefined,
-                        newDownloader.token = tokenInput.value.trim() || undefined;
+                    newDownloader.port = formData.get('downloaderAria2cPort') ? parseInt(formData.get('downloaderAria2cPort'), 10) : undefined;
+                    newDownloader.rpcPath = formData.get('downloaderAria2cRpcPath').trim() || undefined;
+                    newDownloader.token = formData.get('downloaderAria2cToken').trim() || undefined;
                 } else if (newDownloader.type === 'transmission') {
-                    newDownloader.port = parseInt(transPortInput.value, 10) || undefined,
-                        newDownloader.rpcPath = transRpcPathInput.value.trim() || undefined,
-                        newDownloader.username = usernameInput.value.trim() || undefined;
-                    newDownloader.password = passwordInput.value || undefined; // Keep empty password if entered
+                    newDownloader.port = formData.get('downloaderTrasnPort') ? parseInt(formData.get('downloaderTrasnPort'), 10) : undefined;
+                    newDownloader.rpcPath = formData.get('downloaderTrasnRpcPath').trim() || undefined;
+                    newDownloader.username = formData.get('downloaderTrasnUsername').trim() || undefined;
+                    newDownloader.password = formData.get('downloaderTrasnSecret') || undefined;
                 }
 
-                // Remove undefined fields before saving (optional, backend might handle defaults)
                 Object.keys(newDownloader).forEach(key => {
-                    if (newDownloader[key] === undefined || newDownloader[key] === null || newDownloader[key] === '') {
-                        // Let's keep empty strings for now, backend defaults should handle it.
-                        // delete newDownloader[key];
-                        // Exception: keep useHttps: false and autoCleanUp: false if explicitly unchecked
-                        if (key === 'useHttps' && !newDownloader[key]) newDownloader[key] = false;
-                        if (key === 'autoCleanUp' && !newDownloader[key]) newDownloader[key] = false;
-                        // Keep empty token/user/pass if needed
-                        if (key === 'token' && newDownloader.type === 'aria2c' && newDownloader[key] === '') newDownloader[key] = '';
-                        if (key === 'username' && newDownloader.type === 'transmission' && newDownloader[key] === '') newDownloader[key] = '';
-                        if (key === 'password' && newDownloader.type === 'transmission' && newDownloader[key] === '') newDownloader[key] = '';
-
-                        // Remove truly empty optional fields if desired
-                        if (newDownloader[key] === '' && ['host', 'port', 'rpcPath'].includes(key)) {
-                            delete newDownloader[key];
-                        }
-                        if (key === 'port' && isNaN(newDownloader[key])) delete newDownloader[key];
+                    if (newDownloader[key] === undefined || newDownloader[key] === '') {
+                        delete newDownloader[key];
                     }
                 });
 
-                // Use generic functions to add/update the downloader
-                const targetPath = 'downloaders';
-                if (isEditing) {
-                    // Need a way to update item at index, generic add/delete aren't enough
-                    // For now, directly modify and re-render
-                    const contextForUpdate = getCurrentTaskContext(); // Re-fetch context in case it changed
-                    if (!contextForUpdate) return;
-                    const targetConfig = contextForUpdate.taskConfig || (contextForUpdate.isNew ? currentTasks[contextForUpdate.taskName] : null);
-                    if (targetConfig && Array.isArray(targetConfig.downloaders) && index < targetConfig.downloaders.length) {
-                        targetConfig.downloaders[index] = newDownloader;
-                        renderTaskDetail(contextForUpdate.taskName);
-                    } else {
-                        alert(`Error: Could not update downloader at index ${index}.`);
-                    }
+                const context = getCurrentTaskContext();
+                if (!context) { closeModal(); return; } // Ensure modal closes on error
+                const { taskName, taskConfig } = context;
+
+                if (!taskConfig.downloaders) {
+                    taskConfig.downloaders = [];
+                }
+
+                if (indexToEdit !== null && indexToEdit >= 0 && indexToEdit < taskConfig.downloaders.length) {
+                    taskConfig.downloaders[indexToEdit] = newDownloader;
+                    console.log(`Updated downloader at index ${indexToEdit}`);
                 } else {
-                    addTaskListItem(targetPath, newDownloader);
+                    taskConfig.downloaders.push(newDownloader);
+                    console.log("Added new downloader");
                 }
 
                 closeModal();
+                renderTaskDetail(taskName);
+                if (!currentTasks[taskName].isNew) {
+                    currentTasks[taskName].isModified = true;
+                    renderTaskList();
+                }
             });
 
-            body.appendChild(modalForm);
+            // Toggle field visibility
+            const toggleSpecificFields = () => {
+                const selectedType = typeSelect.value; // Use the created typeSelect element
+                aria2cFieldsDiv.style.display = selectedType === 'aria2c' ? 'block' : 'none';
+                transmissionFieldsDiv.style.display = selectedType === 'transmission' ? 'block' : 'none';
+            };
+            typeSelect.addEventListener('change', toggleSpecificFields);
+            toggleSpecificFields(); // Initial call
         });
     }
 
 
-    // --- Event Listeners ---
-    addTaskBtn.addEventListener('click', showNewTaskForm);
-    closeModalBtn.addEventListener('click', closeModal);
-    // Close modal if clicking outside the content
-    window.addEventListener('click', (event) => {
-        if (event.target == modal) {
-            closeModal();
+    // --- Drag and Drop Handlers ---
+
+    let draggedItem = null; // Keep track of the item being dragged
+
+    function handleDragStart(e) {
+        // Ensure the target is the LI element itself
+        if (!e.target.classList.contains('draggable-item')) return;
+        draggedItem = e.target;
+        e.dataTransfer.effectAllowed = 'move';
+        // Optional: Store data, though we can get it from draggedItem later
+        e.dataTransfer.setData('text/plain', draggedItem.dataset.index);
+        // Add a class to the dragged item for visual feedback (defer to avoid issues)
+        setTimeout(() => {
+            if (draggedItem) draggedItem.classList.add('dragging');
+        }, 0);
+    }
+
+    function handleDragEnd(e) {
+        // Remove the dragging class
+        if (draggedItem) {
+            draggedItem.classList.remove('dragging');
         }
-    });
+        // Remove any drag-over class from potential targets
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        draggedItem = null;
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault(); // Necessary to allow dropping
+        if (!draggedItem) return; // Only act if an item is being dragged
+
+        const targetList = e.currentTarget; // The UL element
+        // Find the closest LI element that is draggable, could be the target itself or a parent
+        const targetItem = e.target.closest('li.draggable-item');
+
+        // Ensure we are dragging over a valid list for the item type
+        const listId = targetList.id;
+        const itemType = draggedItem.dataset.itemType;
+        if ((listId === 'downloader-list' && itemType !== 'downloader') ||
+            (listId === 'feed-url-list' && itemType !== 'feed')) {
+            e.dataTransfer.dropEffect = 'none'; // Indicate invalid drop target
+            // Clean up any lingering highlights from other lists
+            document.querySelectorAll(`#${listId} .drag-over`).forEach(el => el.classList.remove('drag-over'));
+            return;
+        }
+
+        e.dataTransfer.dropEffect = 'move'; // Indicate valid drop target
+
+        // Remove previous drag-over highlights from siblings within the *same* list
+        Array.from(targetList.children).forEach(child => {
+            if (child !== targetItem && child.classList.contains('draggable-item')) { // Only check draggable items
+                child.classList.remove('drag-over');
+            }
+        });
+
+        if (targetItem && targetItem !== draggedItem) {
+            targetItem.classList.add('drag-over'); // Highlight the potential drop target
+        }
+    }
+
+    function handleDragLeave(e) {
+        // Remove drag-over class when leaving a potential target LI or the list itself
+        const currentTarget = e.currentTarget; // The UL
+        const relatedTarget = e.relatedTarget; // Where the mouse is going
+
+        // Check if the mouse is leaving the list container entirely
+        if (!currentTarget.contains(relatedTarget)) {
+            // Remove highlight from all items in this list
+            Array.from(currentTarget.children).forEach(child => {
+                child.classList.remove('drag-over');
+            });
+        } else if (e.target.classList.contains('draggable-item') && e.target !== relatedTarget?.closest('li.draggable-item')) {
+            // If leaving a specific LI, remove its highlight, unless moving directly to another LI
+            e.target.classList.remove('drag-over');
+        }
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation(); // Prevent event bubbling
+
+        if (!draggedItem) return;
+
+        const targetList = e.currentTarget; // The UL element
+        const targetItem = e.target.closest('li.draggable-item'); // The LI being dropped onto/near
+        const listId = targetList.id; // e.g., 'downloader-list' or 'feed-url-list'
+        const itemType = draggedItem.dataset.itemType; // 'downloader' or 'feed'
+
+        // Clean up visual cues immediately
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        if (draggedItem) draggedItem.classList.remove('dragging');
+
+
+        // Ensure drop is within the same list type
+        if ((listId === 'downloader-list' && itemType !== 'downloader') ||
+            (listId === 'feed-url-list' && itemType !== 'feed')) {
+            console.warn("Cannot drop item into a list of a different type.");
+            draggedItem = null; // Reset dragged item
+            return;
+        }
+
+        // Don't drop on itself
+        if (targetItem === draggedItem) {
+            draggedItem = null; // Reset dragged item
+            return;
+        }
+
+        const context = getCurrentTaskContext();
+        if (!context) {
+            draggedItem = null; return;
+        }
+        const { taskName, taskConfig } = context;
+
+        let itemsArray;
+        let arrayPath; // Path to the array within taskConfig
+
+        if (itemType === 'downloader') {
+            arrayPath = 'downloaders';
+            if (!taskConfig.downloaders) taskConfig.downloaders = []; // Ensure array exists
+            itemsArray = taskConfig.downloaders;
+        } else if (itemType === 'feed') {
+            arrayPath = 'feed.URLs';
+            // Ensure feed and URLs array exist
+            if (!taskConfig.feed) taskConfig.feed = { URLs: [] };
+            if (!taskConfig.feed.URLs) taskConfig.feed.URLs = [];
+            itemsArray = taskConfig.feed.URLs;
+        } else {
+            console.error("Unknown draggable item type:", itemType);
+            draggedItem = null; return;
+        }
+
+        if (!itemsArray) {
+            console.error(`Could not find items array for type "${itemType}" in task "${taskName}"`);
+            draggedItem = null; return;
+        }
+
+        const draggedIndex = parseInt(draggedItem.dataset.index, 10);
+        // Check if index is valid
+        if (isNaN(draggedIndex) || draggedIndex < 0 || draggedIndex >= itemsArray.length) {
+            console.error("Invalid dragged item index:", draggedItem.dataset.index);
+            draggedItem = null; return;
+        }
+        const itemToMove = itemsArray[draggedIndex];
+
+        // Remove item from its original position in the data array
+        itemsArray.splice(draggedIndex, 1);
+
+        let targetIndex;
+        if (targetItem) {
+            // Dropped onto another item
+            // Get the index of the target item *in the current DOM order* before inserting
+            const currentDomItems = Array.from(targetList.children);
+            targetIndex = currentDomItems.indexOf(targetItem);
+
+            // Insert the moved item at this index in the data array
+            itemsArray.splice(targetIndex, 0, itemToMove);
+        } else {
+            // Dropped onto the list but not onto a specific item (append to end)
+            itemsArray.push(itemToMove);
+            targetIndex = itemsArray.length - 1; // New index is the last one
+        }
+
+        console.log(`Moved ${itemType} from original index ${draggedIndex} to new index ${targetIndex}`);
+
+        // --- Re-render the list ---
+        // Clear the current list in the DOM
+        targetList.innerHTML = '';
+        // Re-populate the list based on the updated itemsArray, assigning new indices
+        itemsArray.forEach((item, index) => {
+            if (itemType === 'downloader') {
+                renderDownloaderItem(targetList, item, index);
+            } else if (itemType === 'feed') {
+                renderFeedUrlItem(targetList, item, index);
+            }
+        });
+
+        // Mark task as modified
+        if (!currentTasks[taskName].isNew) {
+            currentTasks[taskName].isModified = true;
+            renderTaskList();
+        }
+        // const saveButton = document.querySelector('#task-form .primary-button');
+        // if (saveButton && !saveButton.textContent.includes('*')) {
+        //     saveButton.textContent += '*'; // Indicate unsaved changes
+        // }
+
+        draggedItem = null; // Reset dragged item state
+    }
 
 
     // --- Initial Load ---
     loadTasks();
-
 });

@@ -1,22 +1,24 @@
 body {
     font-family: sans-serif;
     margin: 0;
-    padding: 20px;
+    padding: 10px; /* Reduced padding for smaller screens */
     background-color: #f4f4f4;
     color: #333;
+    line-height: 1.6; /* Improve readability */
 }
 
 .container {
     max-width: 1200px;
     margin: auto;
     background: #fff;
-    padding: 20px;
+    padding: 15px; /* Reduced padding */
     border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow */
 }
 
 h1, h2, h3 {
-    color: #555;
+    color: #333; /* Darker headings */
+    margin-bottom: 0.8em; /* Consistent bottom margin */
 }
 
 .main-layout {
@@ -28,8 +30,8 @@ h1, h2, h3 {
 .task-list-panel {
     flex: 1;
     min-width: 200px;
-    border-right: 1px solid #ddd;
-    padding-right: 20px;
+    /* border-right: 1px solid #ddd; */ /* Removed border for cleaner look, spacing handled by gap */
+    padding-right: 0; /* Removed padding, spacing handled by gap */
 }
 
 .task-list-panel h2 {
@@ -40,8 +42,11 @@ h1, h2, h3 {
     list-style: none;
     padding: 0;
     margin: 10px 0;
-    max-height: 60vh;
+    max-height: 70vh; /* Allow slightly more vertical space */
     overflow-y: auto;
+    border: 1px solid #eee; /* Add subtle border */
+    border-radius: 4px; /* Rounded corners */
+    padding: 5px; /* Inner padding */
 }
 
 #task-list li {
@@ -51,32 +56,44 @@ h1, h2, h3 {
 .task-button {
     display: block;
     width: 100%;
-    padding: 8px 12px;
-    background-color: #e7e7e7;
-    border: 1px solid #ccc;
+    padding: 10px 15px; /* Slightly larger padding */
+    background-color: #f8f9fa; /* Lighter background */
+    border: 1px solid #dee2e6; /* Lighter border */
     border-radius: 4px;
     cursor: pointer;
     text-align: left;
-    font-size: 1em;
-    transition: background-color 0.2s;
+    font-size: 0.95em; /* Slightly smaller font */
+    transition: background-color 0.2s, border-color 0.2s;
+    white-space: nowrap; /* Prevent wrapping */
+    overflow: hidden; /* Hide overflow */
+    text-overflow: ellipsis; /* Add ellipsis for long names */
 }
 
 .task-button:hover {
-    background-color: #ddd;
+    background-color: #e9ecef; /* Slightly darker hover */
+    border-color: #ced4da;
 }
 
 .task-button.active {
-    background-color: #007bff;
+    background-color: #0d6efd; /* Updated primary color */
     color: white;
-    border-color: #0056b3;
+    border-color: #0a58ca;
 }
 
-.task-button.new-task::before {
-    content: "⚠️";
+.task-button.new-task::after {
+    content: "✨ ";
+}
+
+.task-button.modified-task::after {
+    content: "📝 ";
+}
+
+#add-task-btn {
+    text-align: center;
 }
 
 .task-detail-panel {
-    flex: 3;
+    flex: 2.5; /* Adjust flex ratio slightly */
 }
 
 .task-detail-panel h2 {
@@ -88,7 +105,7 @@ h1, h2, h3 {
     padding: 15px;
     border: 1px solid #eee;
     border-radius: 5px;
-    background-color: #f9f9f9;
+    background-color: #fff; /* Cleaner background */
 }
 
 /* --- Form Styles --- */
@@ -112,7 +129,9 @@ h1, h2, h3 {
     margin-top: 0;
     margin-bottom: 10px;
     font-size: 1.1em;
-    color: #444;
+    color: #495057; /* Softer color */
+    border-bottom: 1px solid #eee; /* Add separator */
+    padding-bottom: 5px; /* Spacing below heading */
 }
 
 .form-section h4 {
@@ -145,11 +164,12 @@ h1, h2, h3 {
 .form-group input[type="url"],
 .form-group select,
 .form-group textarea {
-    width: calc(100% - 22px); /* Adjust for padding and border */
+    width: 100%; /* Use box-sizing */
     padding: 8px 10px;
-    border: 1px solid #ccc;
+    border: 1px solid #ced4da; /* Updated border color */
     border-radius: 4px;
     font-size: 1em;
+    box-sizing: border-box; /* Include padding and border in width */
 }
 
 .form-group input[type="checkbox"] {
@@ -173,19 +193,22 @@ h1, h2, h3 {
 }
 
 .list-items li {
-    background-color: #eee;
-    padding: 5px 8px;
+    background-color: #f8f9fa; /* Lighter background */
+    padding: 8px 10px; /* More padding */
     margin-bottom: 5px;
-    border-radius: 3px;
+    border: 1px solid #eee; /* Add border */
+    border-radius: 4px; /* Consistent radius */
     display: flex;
     justify-content: space-between;
     align-items: center;
+    word-break: break-all; /* Prevent long URLs from breaking layout */
 }
 
 .list-item-actions button {
-    margin-left: 5px;
-    padding: 2px 5px;
-    font-size: 0.8em;
+    margin-left: 8px; /* More space */
+    padding: 3px 6px; /* Slightly larger */
+    font-size: 0.85em;
+    line-height: 1; /* Prevent button height issues */
 }
 
 .add-item-form {
@@ -209,16 +232,16 @@ h1, h2, h3 {
 }
 
 .button.primary-button {
-    background-color: #007bff;
+    background-color: #0d6efd; /* Updated primary color */
     color: white;
 }
 
 .button.primary-button:hover {
-    background-color: #0056b3;
+    background-color: #0a58ca;
 }
 
 .button.secondary-button {
-    background-color: #6c757d;
+    background-color: #6c757d; /* Standard secondary color */
     color: white;
 }
 
@@ -227,7 +250,7 @@ h1, h2, h3 {
 }
 
 .button.danger-button {
-    background-color: #dc3545;
+    background-color: #dc3545; /* Standard danger color */
     color: white;
 }
 
@@ -236,14 +259,14 @@ h1, h2, h3 {
 }
 
 .button.add-button {
-    background-color: #28a745;
+    background-color: #198754; /* Standard success color */
     color: white;
     width: 100%;
     margin-top: 10px;
 }
 
 .button.add-button:hover {
-    background-color: #218838;
+    background-color: #157347;
 }
 
 .action-buttons {
@@ -275,10 +298,11 @@ h1, h2, h3 {
     margin: 10% auto; /* 10% from the top and centered */
     padding: 20px;
     border: 1px solid #888;
-    width: 80%; /* Could be more or less, depending on screen size */
-    max-width: 600px;
+    width: 90%; /* Adjusted for smaller screens */
+    max-width: 500px; /* Slightly smaller max-width */
     border-radius: 8px;
     position: relative;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2); /* Add shadow to modal */
 }
 
 .close-button {
@@ -303,5 +327,113 @@ h1, h2, h3 {
 
 /* --- Utility --- */
 .hidden {
-    display: none;
+    display: none !important; /* Use important to ensure hiding */
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 768px) {
+    body {
+        padding: 5px; /* Further reduce padding on small screens */
+    }
+
+    .container {
+        padding: 10px;
+    }
+
+    .main-layout {
+        flex-direction: column; /* Stack panels vertically */
+        gap: 15px; /* Adjust gap for vertical layout */
+    }
+
+    .task-list-panel {
+        min-width: 100%; /* Take full width */
+        border-right: none; /* Remove border */
+        padding-right: 0;
+        margin-bottom: 15px; /* Add space below task list */
+        border-bottom: 1px solid #eee; /* Add bottom border */
+        padding-bottom: 15px; /* Add padding below */
+    }
+
+    #task-list {
+        display: flex;
+        flex-wrap: wrap; /* Allow items to wrap */
+        border: 1px solid #eee; /* Keep border */
+        border-radius: 4px;
+        gap: 8px; /* Use gap for spacing between items, both horizontally and vertically */
+        padding: 5px; /* Keep inner padding */
+        margin-bottom: 0; /* Remove bottom margin if needed */
+    }
+
+     #task-list li {
+        display: inline-block; /* Keep inline-block */
+        vertical-align: top;
+    }
+
+     .task-button {
+        /* Styles for horizontal list buttons */
+        width: auto; /* Allow button to size to content */
+        display: inline-block; /* Align inline */
+        text-align: center; /* Center text/icon */
+    }
+    /* Specific style for the add task button in horizontal layout */
+    #add-task-btn {
+        width: auto; /* Override general .add-button width */
+        min-width: 40px; /* Ensure minimum size for the '+' */
+        margin-top: 0; /* Override general .add-button margin */
+        padding: 10px; /* Adjust padding for '+' */
+        font-size: 1.2em; /* Make '+' slightly larger */
+        line-height: 1; /* Adjust line height for vertical centering */
+    }
+
+    .task-detail-panel {
+        width: 100%; /* Take full width */
+    }
+
+    .form-group input[type="text"],
+    .form-group input[type="number"],
+    .form-group input[type="password"],
+    .form-group input[type="url"],
+    .form-group select,
+    .form-group textarea {
+        font-size: 0.95em; /* Adjust font size for mobile */
+    }
+
+    .action-buttons {
+        justify-content: center; /* Center buttons on small screens */
+    }
+
+    .modal-content {
+        width: 95%;
+        margin: 5% auto; /* Adjust margin */
+        padding: 15px;
+    }
+
+    h1 {
+        font-size: 1.5em; /* Adjust heading size */
+    }
+    h2 {
+        font-size: 1.2em;
+    }
+    h3 {
+        font-size: 1.1em;
+    }
+
+    .button {
+        padding: 8px 12px; /* Adjust button padding */
+        font-size: 0.95em;
+    }
+}
+
+/* --- Draggable Item Styles (for later) --- */
+.draggable-item {
+    cursor: move; /* Indicate draggable */
+    /* Add some visual cue */
+    /* padding-left: 20px;
+    background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-grip-vertical" viewBox="0 0 16 16"><path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>');
+    background-repeat: no-repeat;
+    background-position: 5px center; */
+}
+
+.drag-over {
+    border-top: 2px dashed #0d6efd; /* Highlight drop target */
 }
