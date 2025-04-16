@@ -1,8 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const taskListUl = document.getElementById('task-list');
-    const taskDetailPanel = document.getElementById('task-detail-panel');
     const taskFormContainer = document.getElementById('task-form-container');
-    const addTaskBtn = document.getElementById('add-task-btn');
     const modal = document.getElementById('modal');
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
@@ -37,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderTaskList() {
-        taskListUl.innerHTML = ''; // Clear existing list
+        taskListUl.innerHTML = '';
         const sortedTaskNames = Object.keys(currentTasks).sort();
 
         sortedTaskNames.forEach(taskName => {
@@ -152,11 +150,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- Action Buttons ---
         const actionDiv = document.createElement('div');
         actionDiv.classList.add('action-buttons');
-
         const saveButton = document.createElement('button');
         saveButton.type = 'submit';
+        saveButton.style.display = "none";
         saveButton.textContent = form.dataset.isNew === "true" ? 'Create Task' : 'Save Changes';
         saveButton.classList.add('button', 'primary-button');
+        if (form.dataset.isNew === "true" || taskConfig.isModified) {
+            saveButton.style.display = "block";
+        } else {
+            saveButton.style.display = "none";
+        }
         actionDiv.appendChild(saveButton);
 
         const deleteButton = document.createElement('button');
@@ -383,28 +386,58 @@ document.addEventListener('DOMContentLoaded', () => {
         ul.appendChild(li);
     }
 
-    // Renamed function to avoid conflict, handles adding via the input form
+    // Handles adding a feed URL via a modal
     function addFeedUrlToList() {
-        const context = getCurrentTaskContext();
-        if (!context) return;
-        const { taskConfig } = context; // No need for isNew here
+        openModal("Add Feed URL", (body) => {
+            const form = document.createElement('form');
+            const input = createTextField(form, 'newFeedUrlInput', 'Feed URL', '', false, 'https://example.com/feed.xml');
+            input.required = true; // Basic HTML5 validation
 
-        const newUrl = prompt("Enter a feed URL:");
-        if (newUrl === null) {
-            return;
-        }
-        if (newUrl.trim()) {
-            // Ensure the path exists before adding using the generic function
-            if (!taskConfig.feed) {
-                taskConfig.feed = { URLs: [] };
-            }
-            if (!taskConfig.feed.URLs) {
-                taskConfig.feed.URLs = [];
-            }
-            addTaskListItem('feed.URLs', newUrl); // Add to data and re-render
-        } else {
-            alert('Please enter a valid URL.');
-        }
+            const errorDiv = document.createElement('div');
+            errorDiv.style.color = 'red';
+            errorDiv.style.marginTop = '5px';
+            form.appendChild(errorDiv);
+
+            const actionDiv = document.createElement('div');
+            actionDiv.classList.add('action-buttons');
+            const addButton = document.createElement('button');
+            addButton.type = 'submit';
+            addButton.textContent = 'Add URL';
+            addButton.classList.add('button', 'primary-button');
+            actionDiv.appendChild(addButton);
+            form.appendChild(actionDiv);
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                errorDiv.textContent = ''; // Clear previous errors
+                const newUrl = input.value.trim();
+
+                if (newUrl) {
+                    const context = getCurrentTaskContext();
+                    if (!context) {
+                        closeModal();
+                        return;
+                    }
+                    const { taskConfig } = context;
+
+                    // Ensure the path exists before adding
+                    if (!taskConfig.feed) {
+                        taskConfig.feed = { URLs: [] };
+                    }
+                    if (!taskConfig.feed.URLs) {
+                        taskConfig.feed.URLs = [];
+                    }
+                    addTaskListItem('feed.URLs', newUrl); // Add to data and re-render
+                    closeModal();
+                } else {
+                    errorDiv.textContent = 'Please enter a valid URL.';
+                }
+            });
+
+            body.appendChild(form);
+            // Set focus to the input field when the modal opens
+            setTimeout(() => input.focus(), 0);
+        });
     }
 
 
@@ -436,9 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         removeFilterBtn.type = 'button';
         removeFilterBtn.textContent = 'Remove Filter Section';
         removeFilterBtn.classList.add('button', 'danger-button');
-        // removeFilterBtn.style.marginTop = '10px';
         removeFilterBtn.addEventListener('click', () => {
-            // Use generic toggle function
             toggleTaskSection('filter', null, 'Are you sure you want to remove the entire filter section?');
         });
         section.appendChild(removeFilterBtn);
@@ -614,10 +645,10 @@ document.addEventListener('DOMContentLoaded', () => {
             currentTasks[taskName].isModified = true;
             renderTaskList();
         }
-        // const saveButton = document.querySelector('#task-form .primary-button');
-        // if (saveButton && !saveButton.textContent.includes('*')) {
-        //     saveButton.textContent += '*';
-        // }
+        const saveButton = document.querySelector('#task-form .primary-button');
+        if (saveButton) {
+            saveButton.style.display = "block";
+        }
     }
 
     // Generic function to delete an item from a list within the current task's config
@@ -644,10 +675,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentTasks[taskName].isModified = true;
                 renderTaskList();
             }
-            // const saveButton = document.querySelector('#task-form .primary-button');
-            // if (saveButton && !saveButton.textContent.includes('*')) {
-            //     saveButton.textContent += '*';
-            // }
+            const saveButton = document.querySelector('#task-form .primary-button');
+            if (saveButton) {
+                saveButton.style.display = "block";
+            }
         } else {
             console.error(`deleteTaskListItem: Invalid index ${index} for path "${itemPath}" in task "${taskName}".`);
         }
@@ -677,10 +708,10 @@ document.addEventListener('DOMContentLoaded', () => {
             currentTasks[taskName].isModified = true;
             renderTaskList();
         }
-        // const saveButton = document.querySelector('#task-form .primary-button');
-        // if (saveButton && !saveButton.textContent.includes('*')) {
-        //     saveButton.textContent += '*';
-        // }
+        const saveButton = document.querySelector('#task-form .primary-button');
+        if (saveButton) {
+            saveButton.style.display = "block";
+        }
     }
 
 
@@ -781,7 +812,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentTasks[taskName] = finalTaskConfig; // Update local cache with saved data
             selectedTaskName = taskName; // Ensure it remains selected
             renderTaskList(); // Update list (e.g., remove new task indicator)
-            renderTaskDetail(taskName); // Re-render detail panel with saved data (removes '*' from save button)
+            renderTaskDetail(taskName); 
 
         } catch (error) {
             console.error('Failed to save task:', error);
@@ -812,28 +843,58 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Add New Task ---
 
     function showNewTaskForm() {
-        const newTaskName = prompt("Enter a name for the new task:");
-        if (!newTaskName || !newTaskName.trim()) {
-            alert("Task name cannot be empty.");
-            return;
-        }
-        const trimmedName = newTaskName.trim();
-        if (currentTasks[trimmedName]) {
-            alert(`Task "${trimmedName}" already exists.`);
-            return;
-        }
+        openModal("Add New Task", (body) => {
+            const form = document.createElement('form');
+            const input = createTextField(form, 'newTaskNameInput', 'New Task Name', '', false, 'My New Feed Task');
+            input.required = true;
 
-        // Create a temporary placeholder in currentTasks
-        currentTasks[trimmedName] = {
-            isNew: true, // Flag to indicate it's a new task
-            interval: 10, // Default interval
-            downloaders: [],
-            feed: { URLs: [] },
-        };
+            const errorDiv = document.createElement('div');
+            errorDiv.style.color = 'red';
+            errorDiv.style.marginTop = '5px';
+            form.appendChild(errorDiv);
 
-        selectedTaskName = trimmedName; // Select the new task
-        renderTaskList(); // Update list to show the new task (maybe with an indicator)
-        renderTaskDetail(trimmedName); // Render the form for the new task
+            const actionDiv = document.createElement('div');
+            actionDiv.classList.add('action-buttons');
+            const createButton = document.createElement('button');
+            createButton.type = 'submit';
+            createButton.textContent = 'Create Task';
+            createButton.classList.add('button', 'primary-button');
+            actionDiv.appendChild(createButton);
+            form.appendChild(actionDiv);
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                errorDiv.textContent = ''; // Clear previous errors
+                const newTaskName = input.value.trim();
+
+                if (!newTaskName) {
+                    errorDiv.textContent = "Task name cannot be empty.";
+                    return;
+                }
+                if (currentTasks[newTaskName]) {
+                    errorDiv.textContent = `Task "${newTaskName}" already exists.`;
+                    return;
+                }
+
+                // Validation passed, proceed with task creation logic
+                // Create a temporary placeholder in currentTasks
+                currentTasks[newTaskName] = {
+                    isNew: true, // Flag to indicate it's a new task
+                    interval: 10, // Default interval
+                    downloaders: [],
+                    feed: { URLs: [] },
+                };
+
+                selectedTaskName = newTaskName; // Select the new task
+                renderTaskList(); // Update list to show the new task
+                renderTaskDetail(newTaskName); // Render the form for the new task
+                closeModal(); // Close the modal on success
+            });
+
+            body.appendChild(form);
+            // Set focus to the input field when the modal opens
+            setTimeout(() => input.focus(), 0);
+        });
     }
 
     // --- Modal Management ---
@@ -1161,6 +1222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`Moved ${itemType} from original index ${draggedIndex} to new index ${targetIndex}`);
 
         // --- Re-render the list ---
+
         // Clear the current list in the DOM
         targetList.innerHTML = '';
         // Re-populate the list based on the updated itemsArray, assigning new indices
@@ -1177,10 +1239,10 @@ document.addEventListener('DOMContentLoaded', () => {
             currentTasks[taskName].isModified = true;
             renderTaskList();
         }
-        // const saveButton = document.querySelector('#task-form .primary-button');
-        // if (saveButton && !saveButton.textContent.includes('*')) {
-        //     saveButton.textContent += '*'; // Indicate unsaved changes
-        // }
+        const saveButton = document.querySelector('#task-form .primary-button');
+        if (saveButton) {
+            saveButton.style.display = "block";
+        }
 
         draggedItem = null; // Reset dragged item state
     }

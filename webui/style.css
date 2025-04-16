@@ -54,14 +54,15 @@ h1, h2, h3 {
 }
 
 .task-button {
-    display: block;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
     width: 100%;
     padding: 10px 15px; /* Slightly larger padding */
     background-color: #f8f9fa; /* Lighter background */
     border: 1px solid #dee2e6; /* Lighter border */
     border-radius: 4px;
     cursor: pointer;
-    text-align: left;
     font-size: 0.95em; /* Slightly smaller font */
     transition: background-color 0.2s, border-color 0.2s;
     white-space: nowrap; /* Prevent wrapping */
@@ -80,16 +81,23 @@ h1, h2, h3 {
     border-color: #0a58ca;
 }
 
+.task-button::after {
+    margin-left: auto;
+}
+
 .task-button.new-task::after {
-    content: "✨ ";
+    content: "✨";
 }
 
 .task-button.modified-task::after {
-    content: "📝 ";
+    content: "📝";
 }
 
 #add-task-btn {
+    display: block;
     text-align: center;
+    border: 1px solid #dee2e6;
+    font-size: 0.95em; 
 }
 
 .task-detail-panel {
@@ -357,7 +365,7 @@ h1, h2, h3 {
     #task-list {
         display: flex;
         flex-wrap: wrap; /* Allow items to wrap */
-        border: 1px solid #eee; /* Keep border */
+        border: none;
         border-radius: 4px;
         gap: 8px; /* Use gap for spacing between items, both horizontally and vertically */
         padding: 5px; /* Keep inner padding */
@@ -372,7 +380,8 @@ h1, h2, h3 {
      .task-button {
         /* Styles for horizontal list buttons */
         width: auto; /* Allow button to size to content */
-        display: inline-block; /* Align inline */
+        display: inline-flex; /* Align inline */
+        gap: 0.5em;
         text-align: center; /* Center text/icon */
     }
     /* Specific style for the add task button in horizontal layout */
@@ -383,6 +392,7 @@ h1, h2, h3 {
         padding: 10px; /* Adjust padding for '+' */
         font-size: 1.2em; /* Make '+' slightly larger */
         line-height: 1; /* Adjust line height for vertical centering */
+        border: 1px solid #eee;
     }
 
     .task-detail-panel {
