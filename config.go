@@ -39,42 +39,32 @@ type DownloaderConfig struct {
 type TaskConfig struct {
 	Name        string             `yaml:"-" json:"-"` // Name is derived from the map key, not parsed from YAML directly here.
 	Downloaders []DownloaderConfig `yaml:"downloaders" json:"downloaders"`
-	Feed        FeedConfig         `yaml:"feed" json:"feed"`
+	Feeds       FeedsConfig        `yaml:"feeds" json:"feeds"`
 	Filter      *FilterConfig      `yaml:"filter,omitempty" json:"filter,omitempty"`
 	Extracter   *ExtracterConfig   `yaml:"extracter,omitempty" json:"extracter,omitempty"`
 	Interval    int                `yaml:"interval,omitempty" json:"interval,omitempty"`
 }
 
-// FeedConfig represents feed URL configuration (supports single or multiple URLs)
-type FeedConfig struct {
-	URLs []string `yaml:"urls"`
-}
+// FeedsConfig represents feed configuration (supports single string or string array)
+type FeedsConfig []string
 
 // UnmarshalYAML implements custom unmarshaling to support both string and []string
-func (f *FeedConfig) UnmarshalYAML(unmarshal func(any) error) error {
+func (f *FeedsConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	// First try to unmarshal as single string
 	var singleURL string
 	if err := unmarshal(&singleURL); err == nil {
-		f.URLs = []string{singleURL}
+		*f = []string{singleURL}
 		return nil
 	}
 
 	// Then try to unmarshal as string slice
 	var multiURLs []string
 	if err := unmarshal(&multiURLs); err == nil {
-		f.URLs = multiURLs
+		*f = multiURLs
 		return nil
 	}
 
-	// Finally try the original struct format
-	var aux struct {
-		URLs []string `yaml:"urls"`
-	}
-	if err := unmarshal(&aux); err != nil {
-		return err
-	}
-	f.URLs = aux.URLs
-	return nil
+	return errors.New("feeds must be a string or string array")
 }
 
 // FilterConfig represents content filter configuration
@@ -127,8 +117,8 @@ func LoadConfig(filename string) ([]*Task, error) {
 		if len(taskConfig.Downloaders) == 0 {
 			return nil, fmt.Errorf("task %q: must specify at least one downloader", name)
 		}
-		if len(taskConfig.Feed.URLs) == 0 {
-			return nil, fmt.Errorf("task %q: must specify at least one feed URL", name)
+		if len(taskConfig.Feeds) == 0 {
+			return nil, fmt.Errorf("task %q: must specify at least one feed", name)
 		}
 	}
 
@@ -199,7 +189,7 @@ func parseTask(name string, config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
 
 	task := &Task{
 		parserConfig:  &ParserConfig{},
-		FeedUrls:      config.Feed.URLs,
+		FeedUrls:      config.Feeds,
 		FetchInterval: time.Duration(config.Interval) * time.Minute,
 		Downloaders:   make([]ParsedDownloaderConfig, 0, len(config.Downloaders)),
 	}

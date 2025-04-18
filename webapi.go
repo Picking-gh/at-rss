@@ -101,8 +101,8 @@ func createTask(w http.ResponseWriter, r *http.Request, cfgPath string) {
 		http.Error(w, "Task must have at least one downloader", http.StatusBadRequest)
 		return
 	}
-	if len(newTaskReq.Config.Feed.URLs) == 0 {
-		http.Error(w, "Task must have at least one feed URL", http.StatusBadRequest)
+	if len(newTaskReq.Config.Feeds) == 0 {
+		http.Error(w, "Task must have at least one feed", http.StatusBadRequest)
 		return
 	}
 	// Add more validation based on config.go logic if needed (e.g., interval > 0)
@@ -182,8 +182,8 @@ func updateTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName
 		http.Error(w, "Task must have at least one downloader", http.StatusBadRequest)
 		return
 	}
-	if len(updatedConfig.Feed.URLs) == 0 {
-		http.Error(w, "Task must have at least one feed URL", http.StatusBadRequest)
+	if len(updatedConfig.Feeds) == 0 {
+		http.Error(w, "Task must have at least one feed", http.StatusBadRequest)
 		return
 	}
 	// Add more validation as needed

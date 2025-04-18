@@ -137,8 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- Downloaders ---
         renderDownloaderSection(form, taskConfig.downloaders || []);
 
-        // --- Feed URLs ---
-        renderFeedSection(form, taskConfig.feed?.URLs || []);
+        // --- Feeds ---
+        renderFeedSection(form, taskConfig.feeds || []);
 
         // --- Filter ---
         renderFilterSection(form, taskConfig.filter);
@@ -278,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
         section.appendChild(ul);
 
         // Add drag and drop listeners to the list itself if it's draggable
-        if (listId === 'downloader-list' || listId === 'feed-url-list') {
+        if (listId === 'downloader-list' || listId === 'feed-list') {
             ul.addEventListener('dragover', handleDragOver);
             ul.addEventListener('drop', handleDrop);
             ul.addEventListener('dragleave', handleDragLeave);
@@ -286,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const addButton = document.createElement('button');
         addButton.type = 'button';
-        addButton.textContent = `Add ${title.replace(' List', '').replace(' URLs', ' URL')}`; // Make button text more specific
+        addButton.textContent = `Add ${title.replace(' List', '')}`; // Make button text more specific
         addButton.classList.add('button', 'secondary-button', 'add-item-button');
         addButton.addEventListener('click', () => addItemFunc(ul)); // Pass the UL element to the add function
         section.appendChild(addButton);
@@ -330,8 +330,17 @@ document.addEventListener('DOMContentLoaded', () => {
         li.innerHTML = `
             <span><span class="drag-handle">::</span> <strong>Type:</strong> ${downloader.type} | <strong>RPC URL:</strong> ${getRpcUrl(downloader)}</span>
             <div class="list-item-actions">
-                <button type="button" class="edit-downloader-btn button secondary-button">Edit</button>
-                <button type="button" class="delete-downloader-btn button danger-button">Del</button>
+                <button type="button" class="edit-downloader-btn button secondary-button">
+                <svg width="19px" height="19px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M20,16v4a2,2,0,0,1-2,2H4a2,2,0,0,1-2-2V6A2,2,0,0,1,4,4H8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+                    <polygon fill="none" points="12.5 15.8 22 6.2 17.8 2 8.3 11.5 8 16 12.5 15.8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+                </svg>
+                </button>
+                <button type="button" class="delete-downloader-btn button danger-button">
+                    <svg width="19px" height="19px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
         `;
         li.querySelector('.edit-downloader-btn').addEventListener('click', () => editDownloader(index));
@@ -363,35 +372,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    function renderFeedSection(form, urls) {
-        const listId = 'feed-url-list';
-        createListSection(form, 'Feed URLs', urls, renderFeedUrlItem, addFeedUrlToList, listId); // Changed add function
+    function renderFeedSection(form, feeds) {
+        const listId = 'feed-list';
+        createListSection(form, 'Feeds', feeds, renderFeedItem, addFeedToList, listId);
     }
 
-    function renderFeedUrlItem(ul, url, index) {
+    function renderFeedItem(ul, feed, index) {
         const li = document.createElement('li');
         li.dataset.index = index;
-        li.dataset.itemType = 'feed'; // Identify item type
-        li.draggable = true; // Make it draggable
+        li.dataset.itemType = 'feed';
+        li.draggable = true;
         li.classList.add('draggable-item');
         li.addEventListener('dragstart', handleDragStart);
         li.addEventListener('dragend', handleDragEnd);
         li.innerHTML = `
-            <span><span class="drag-handle">::</span> ${url}</span>
+            <span><span class="drag-handle">::</span> ${feed}</span>
             <div class="list-item-actions">
-                 <button type="button" class="delete-feed-url-btn button danger-button">Del</button>
+                <button type="button" class="delete-feed-btn button danger-button">
+                    <svg width="19px" height="19px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
         `;
-        li.querySelector('.delete-feed-url-btn').addEventListener('click', () => deleteFeedUrl(index));
+        li.querySelector('.delete-feed-btn').addEventListener('click', () => deleteFeed(index));
         ul.appendChild(li);
     }
 
-    // Handles adding a feed URL via a modal
-    function addFeedUrlToList() {
-        openModal("Add Feed URL", (body) => {
+    function addFeedToList() {
+        openModal("Add a New Feed", (body) => {
             const form = document.createElement('form');
-            const input = createTextField(form, 'newFeedUrlInput', 'Feed URL', '', false, 'https://example.com/feed.xml');
-            input.required = true; // Basic HTML5 validation
+            const input = createTextField(form, 'newFeedInput', 'Feed URL', '', false, 'https://example.com/feed.xml');
+            input.required = true;
 
             const errorDiv = document.createElement('div');
             errorDiv.style.color = 'red';
@@ -402,17 +414,17 @@ document.addEventListener('DOMContentLoaded', () => {
             actionDiv.classList.add('action-buttons');
             const addButton = document.createElement('button');
             addButton.type = 'submit';
-            addButton.textContent = 'Add URL';
+            addButton.textContent = 'Add';
             addButton.classList.add('button', 'primary-button');
             actionDiv.appendChild(addButton);
             form.appendChild(actionDiv);
 
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
-                errorDiv.textContent = ''; // Clear previous errors
-                const newUrl = input.value.trim();
+                errorDiv.textContent = '';
+                const newFeed = input.value.trim();
 
-                if (newUrl) {
+                if (newFeed) {
                     const context = getCurrentTaskContext();
                     if (!context) {
                         closeModal();
@@ -420,30 +432,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     const { taskConfig } = context;
 
-                    // Ensure the path exists before adding
-                    if (!taskConfig.feed) {
-                        taskConfig.feed = { URLs: [] };
+                    if (!taskConfig.feeds) {
+                        taskConfig.feeds = [];
                     }
-                    if (!taskConfig.feed.URLs) {
-                        taskConfig.feed.URLs = [];
-                    }
-                    addTaskListItem('feed.URLs', newUrl); // Add to data and re-render
+                    addTaskListItem('feeds', newFeed);
                     closeModal();
                 } else {
-                    errorDiv.textContent = 'Please enter a valid URL.';
+                    errorDiv.textContent = 'Please enter a valid feed URL.';
                 }
             });
 
             body.appendChild(form);
-            // Set focus to the input field when the modal opens
             setTimeout(() => input.focus(), 0);
         });
     }
 
-
-    function deleteFeedUrl(index) {
-        // Use the generic delete function
-        deleteTaskListItem('feed.URLs', index, 'Are you sure you want to delete this feed URL?');
+    function deleteFeed(index) {
+        deleteTaskListItem('feeds', index, 'Are you sure you want to delete this feed?');
     }
 
 
@@ -519,7 +524,11 @@ document.addEventListener('DOMContentLoaded', () => {
         li.innerHTML = `
             <span>${keyword}</span>
             <div class="list-item-actions">
-                 <button type="button" class="delete-keyword-btn button danger-button">Del</button>
+                <button type="button" class="delete-keyword-btn button danger-button">
+                    <svg width="19px" height="19px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
         `;
         li.querySelector('.delete-keyword-btn').addEventListener('click', () => deleteFunc(index));
@@ -733,15 +742,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(isNew ? {} : currentConfig),
             // Overwrite with form values
             interval: parseInt(form.elements.interval.value, 10) || 10,
-            // Downloaders and Feed URLs are managed by their respective add/delete/drag functions
-            // directly modifying currentTasks[taskName].downloaders and currentTasks[taskName].feed.URLs
+            // Downloaders and Feeds are managed by their respective add/delete/drag functions
+            // directly modifying currentTasks[taskName].downloaders and currentTasks[taskName].feeds
             downloaders: currentConfig.downloaders || [], // Get potentially reordered array
-            feed: {
-                URLs: currentConfig.feed?.URLs || [] // Get potentially reordered array
-            },
-            // Filter section
+            feeds: currentConfig.feeds || [], // Get potentially reordered array
             filter: undefined, // Start with undefined
-            // Extracter section
             extracter: undefined, // Start with undefined
         };
 
@@ -775,7 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // --- Basic Validation (using finalTaskConfig) ---
-        if (!finalTaskConfig.feed?.URLs?.length) {
+        if (!finalTaskConfig.feeds?.length) {
             alert('Task must have at least one feed URL.');
             return;
         }
@@ -812,7 +817,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentTasks[taskName] = finalTaskConfig; // Update local cache with saved data
             selectedTaskName = taskName; // Ensure it remains selected
             renderTaskList(); // Update list (e.g., remove new task indicator)
-            renderTaskDetail(taskName); 
+            renderTaskDetail(taskName);
 
         } catch (error) {
             console.error('Failed to save task:', error);
@@ -843,7 +848,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Add New Task ---
 
     function showNewTaskForm() {
-        openModal("Add New Task", (body) => {
+        openModal("Add a New Task", (body) => {
             const form = document.createElement('form');
             const input = createTextField(form, 'newTaskNameInput', 'New Task Name', '', false, 'My New Feed Task');
             input.required = true;
@@ -882,7 +887,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     isNew: true, // Flag to indicate it's a new task
                     interval: 10, // Default interval
                     downloaders: [],
-                    feed: { URLs: [] },
+                    feeds: [],
                 };
 
                 selectedTaskName = newTaskName; // Select the new task
@@ -925,7 +930,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openDownloaderModal(downloaderData = null, index = null) {
         const isEditing = downloaderData !== null && index !== null;
-        const title = isEditing ? `Edit Downloader #${index + 1}` : 'Add New Downloader';
+        const title = isEditing ? `Edit Downloader #${index + 1}` : 'Add a New Downloader';
 
         openModal(title, (body) => {
             body.innerHTML = ''; // Clear previous content
@@ -982,7 +987,7 @@ document.addEventListener('DOMContentLoaded', () => {
             actionDiv.classList.add('action-buttons');
             const submitButton = document.createElement('button');
             submitButton.type = 'submit';
-            submitButton.textContent = isEditing ? 'Save Downloader' : 'Add Downloader';
+            submitButton.textContent = isEditing ? 'Save' : 'Add';
             submitButton.classList.add('button', 'primary-button');
             actionDiv.appendChild(submitButton);
             form.appendChild(actionDiv);
@@ -1096,7 +1101,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const listId = targetList.id;
         const itemType = draggedItem.dataset.itemType;
         if ((listId === 'downloader-list' && itemType !== 'downloader') ||
-            (listId === 'feed-url-list' && itemType !== 'feed')) {
+            (listId === 'feed-list' && itemType !== 'feed')) {
             e.dataTransfer.dropEffect = 'none'; // Indicate invalid drop target
             // Clean up any lingering highlights from other lists
             document.querySelectorAll(`#${listId} .drag-over`).forEach(el => el.classList.remove('drag-over'));
@@ -1142,7 +1147,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const targetList = e.currentTarget; // The UL element
         const targetItem = e.target.closest('li.draggable-item'); // The LI being dropped onto/near
-        const listId = targetList.id; // e.g., 'downloader-list' or 'feed-url-list'
+        const listId = targetList.id; // e.g., 'downloader-list' or 'feed-list'
         const itemType = draggedItem.dataset.itemType; // 'downloader' or 'feed'
 
         // Clean up visual cues immediately
@@ -1152,7 +1157,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Ensure drop is within the same list type
         if ((listId === 'downloader-list' && itemType !== 'downloader') ||
-            (listId === 'feed-url-list' && itemType !== 'feed')) {
+            (listId === 'feed-list' && itemType !== 'feed')) {
             console.warn("Cannot drop item into a list of a different type.");
             draggedItem = null; // Reset dragged item
             return;
@@ -1175,14 +1180,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (itemType === 'downloader') {
             arrayPath = 'downloaders';
-            if (!taskConfig.downloaders) taskConfig.downloaders = []; // Ensure array exists
+            if (!taskConfig.downloaders) taskConfig.downloaders = [];
             itemsArray = taskConfig.downloaders;
         } else if (itemType === 'feed') {
-            arrayPath = 'feed.URLs';
-            // Ensure feed and URLs array exist
-            if (!taskConfig.feed) taskConfig.feed = { URLs: [] };
-            if (!taskConfig.feed.URLs) taskConfig.feed.URLs = [];
-            itemsArray = taskConfig.feed.URLs;
+            arrayPath = 'feeds';
+            if (!taskConfig.feeds) taskConfig.feeds = [];
+            itemsArray = taskConfig.feeds;
         } else {
             console.error("Unknown draggable item type:", itemType);
             draggedItem = null; return;
@@ -1230,7 +1233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (itemType === 'downloader') {
                 renderDownloaderItem(targetList, item, index);
             } else if (itemType === 'feed') {
-                renderFeedUrlItem(targetList, item, index);
+                renderFeedItem(targetList, item, index);
             }
         });
 

@@ -1,24 +1,24 @@
 body {
     font-family: sans-serif;
     margin: 0;
-    padding: 10px; /* Reduced padding for smaller screens */
+    padding: 10px;
     background-color: #f4f4f4;
     color: #333;
-    line-height: 1.6; /* Improve readability */
+    line-height: 1.6;
 }
 
 .container {
     max-width: 1200px;
     margin: auto;
     background: #fff;
-    padding: 15px; /* Reduced padding */
+    padding: 15px;
     border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 h1, h2, h3 {
-    color: #333; /* Darker headings */
-    margin-bottom: 0.8em; /* Consistent bottom margin */
+    color: #333;
+    margin-bottom: 0.8em;
 }
 
 .main-layout {
@@ -30,8 +30,7 @@ h1, h2, h3 {
 .task-list-panel {
     flex: 1;
     min-width: 200px;
-    /* border-right: 1px solid #ddd; */ /* Removed border for cleaner look, spacing handled by gap */
-    padding-right: 0; /* Removed padding, spacing handled by gap */
+    padding-right: 0;
 }
 
 .task-list-panel h2 {
@@ -42,11 +41,10 @@ h1, h2, h3 {
     list-style: none;
     padding: 0;
     margin: 10px 0;
-    max-height: 70vh; /* Allow slightly more vertical space */
+    max-height: 70vh;
     overflow-y: auto;
-    border: 1px solid #eee; /* Add subtle border */
-    border-radius: 4px; /* Rounded corners */
-    padding: 5px; /* Inner padding */
+    border: 1px solid #eee;
+    border-radius: 4px;
 }
 
 #task-list li {
@@ -58,25 +56,25 @@ h1, h2, h3 {
     align-items: center;
     gap: 0.5em;
     width: 100%;
-    padding: 10px 15px; /* Slightly larger padding */
-    background-color: #f8f9fa; /* Lighter background */
-    border: 1px solid #dee2e6; /* Lighter border */
+    padding: 10px 15px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.95em; /* Slightly smaller font */
+    font-size: 0.95em;
     transition: background-color 0.2s, border-color 0.2s;
-    white-space: nowrap; /* Prevent wrapping */
-    overflow: hidden; /* Hide overflow */
-    text-overflow: ellipsis; /* Add ellipsis for long names */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .task-button:hover {
-    background-color: #e9ecef; /* Slightly darker hover */
+    background-color: #e9ecef;
     border-color: #ced4da;
 }
 
 .task-button.active {
-    background-color: #0d6efd; /* Updated primary color */
+    background-color: #0d6efd;
     color: white;
     border-color: #0a58ca;
 }
@@ -97,11 +95,11 @@ h1, h2, h3 {
     display: block;
     text-align: center;
     border: 1px solid #dee2e6;
-    font-size: 0.95em; 
+    font-size: 0.95em;
 }
 
 .task-detail-panel {
-    flex: 2.5; /* Adjust flex ratio slightly */
+    flex: 2.5;
 }
 
 .task-detail-panel h2 {
@@ -113,7 +111,7 @@ h1, h2, h3 {
     padding: 15px;
     border: 1px solid #eee;
     border-radius: 5px;
-    background-color: #fff; /* Cleaner background */
+    background-color: #fff;
 }
 
 /* --- Form Styles --- */
@@ -137,13 +135,13 @@ h1, h2, h3 {
     margin-top: 0;
     margin-bottom: 10px;
     font-size: 1.1em;
-    color: #495057; /* Softer color */
-    border-bottom: 1px solid #eee; /* Add separator */
-    padding-bottom: 5px; /* Spacing below heading */
+    color: #495057;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
 }
 
 .form-section h4 {
-    margin-bottom: 0px;
+    margin-bottom: 0;
     font-size: 1em;
 }
 
@@ -163,7 +161,7 @@ h1, h2, h3 {
 }
 
 .form-group.checkbox-group label {
-    margin-bottom: 0px;
+    margin-bottom: 0;
 }
 
 .form-group input[type="text"],
@@ -172,12 +170,12 @@ h1, h2, h3 {
 .form-group input[type="url"],
 .form-group select,
 .form-group textarea {
-    width: 100%; /* Use box-sizing */
+    width: 100%;
     padding: 8px 10px;
-    border: 1px solid #ced4da; /* Updated border color */
+    border: 1px solid #ced4da;
     border-radius: 4px;
     font-size: 1em;
-    box-sizing: border-box; /* Include padding and border in width */
+    box-sizing: border-box;
 }
 
 .form-group input[type="checkbox"] {
@@ -201,28 +199,27 @@ h1, h2, h3 {
 }
 
 .list-items li {
-    background-color: #f8f9fa; /* Lighter background */
-    padding: 8px 10px; /* More padding */
+    background-color: #f8f9fa;
+    padding: 8px 10px;
     margin-bottom: 5px;
-    border: 1px solid #eee; /* Add border */
-    border-radius: 4px; /* Consistent radius */
+    border: 1px solid #eee;
+    border-radius: 4px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    word-break: break-all; /* Prevent long URLs from breaking layout */
+    word-break: break-all;
 }
 
 .list-item-actions button {
-    margin-left: 8px; /* More space */
-    padding: 3px 6px; /* Slightly larger */
+    margin-left: 8px;
+    padding: 3px 6px;
     font-size: 0.85em;
-    line-height: 1; /* Prevent button height issues */
+    line-height: 1;
 }
 
 .add-item-form {
     display: flex;
     gap: 5px;
-    /* margin-top: 10px; */
 }
 
 .add-item-form input {
@@ -240,7 +237,7 @@ h1, h2, h3 {
 }
 
 .button.primary-button {
-    background-color: #0d6efd; /* Updated primary color */
+    background-color: #0d6efd;
     color: white;
 }
 
@@ -249,7 +246,7 @@ h1, h2, h3 {
 }
 
 .button.secondary-button {
-    background-color: #6c757d; /* Standard secondary color */
+    background-color: #6c757d;
     color: white;
 }
 
@@ -258,7 +255,7 @@ h1, h2, h3 {
 }
 
 .button.danger-button {
-    background-color: #dc3545; /* Standard danger color */
+    background-color: #dc3545;
     color: white;
 }
 
@@ -267,7 +264,7 @@ h1, h2, h3 {
 }
 
 .button.add-button {
-    background-color: #198754; /* Standard success color */
+    background-color: #198754;
     color: white;
     width: 100%;
     margin-top: 10px;
@@ -284,33 +281,32 @@ h1, h2, h3 {
     justify-content: flex-end;
 }
 
-#removeExtracterBtn{
+#removeExtracterBtn {
     margin-top: 5px;
 }
 
-/* --- Modal Styles --- */
 .modal {
-    display: none; /* Hidden by default */
-    position: fixed; /* Stay in place */
-    z-index: 1; /* Sit on top */
+    display: none;
+    position: fixed;
+    z-index: 1;
     left: 0;
     top: 0;
-    width: 100%; /* Full width */
-    height: 100%; /* Full height */
-    overflow: auto; /* Enable scroll if needed */
-    background-color: rgba(0, 0, 0, 0.4); /* Black w/ opacity */
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.4);
 }
 
 .modal-content {
     background-color: #fefefe;
-    margin: 10% auto; /* 10% from the top and centered */
+    margin: 10% auto;
     padding: 20px;
     border: 1px solid #888;
-    width: 90%; /* Adjusted for smaller screens */
-    max-width: 500px; /* Slightly smaller max-width */
+    width: 90%;
+    max-width: 500px;
     border-radius: 8px;
     position: relative;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2); /* Add shadow to modal */
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
 .close-button {
@@ -333,15 +329,23 @@ h1, h2, h3 {
     margin-top: 15px;
 }
 
-/* --- Utility --- */
 .hidden {
-    display: none !important; /* Use important to ensure hiding */
+    display: none !important;
+}
+
+/* --- Draggable Item Styles --- */
+.draggable-item {
+    cursor: move;
+}
+
+.drag-over {
+    border-top: 2px dashed #0d6efd;
 }
 
 /* --- Responsive Design --- */
 @media (max-width: 768px) {
     body {
-        padding: 5px; /* Further reduce padding on small screens */
+        padding: 5px;
     }
 
     .container {
@@ -349,54 +353,52 @@ h1, h2, h3 {
     }
 
     .main-layout {
-        flex-direction: column; /* Stack panels vertically */
-        gap: 15px; /* Adjust gap for vertical layout */
+        flex-direction: column;
+        gap: 15px;
     }
 
     .task-list-panel {
-        min-width: 100%; /* Take full width */
-        border-right: none; /* Remove border */
+        min-width: 100%;
         padding-right: 0;
-        margin-bottom: 15px; /* Add space below task list */
-        border-bottom: 1px solid #eee; /* Add bottom border */
-        padding-bottom: 15px; /* Add padding below */
+        margin-bottom: 15px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 15px;
     }
 
     #task-list {
         display: flex;
-        flex-wrap: wrap; /* Allow items to wrap */
+        flex-wrap: wrap;
         border: none;
         border-radius: 4px;
-        gap: 8px; /* Use gap for spacing between items, both horizontally and vertically */
-        padding: 5px; /* Keep inner padding */
-        margin-bottom: 0; /* Remove bottom margin if needed */
+        gap: 8px;
+        padding: 5px;
+        margin-bottom: 0;
     }
 
-     #task-list li {
-        display: inline-block; /* Keep inline-block */
+    #task-list li {
+        display: inline-block;
         vertical-align: top;
     }
 
-     .task-button {
-        /* Styles for horizontal list buttons */
-        width: auto; /* Allow button to size to content */
-        display: inline-flex; /* Align inline */
+    .task-button {
+        width: auto;
+        display: inline-flex;
         gap: 0.5em;
-        text-align: center; /* Center text/icon */
+        text-align: center;
     }
-    /* Specific style for the add task button in horizontal layout */
+
     #add-task-btn {
-        width: auto; /* Override general .add-button width */
-        min-width: 40px; /* Ensure minimum size for the '+' */
-        margin-top: 0; /* Override general .add-button margin */
-        padding: 10px; /* Adjust padding for '+' */
-        font-size: 1.2em; /* Make '+' slightly larger */
-        line-height: 1; /* Adjust line height for vertical centering */
+        width: auto;
+        min-width: 40px;
+        margin-top: 0;
+        padding: 10px;
+        font-size: 1.2em;
+        line-height: 1;
         border: 1px solid #eee;
     }
 
     .task-detail-panel {
-        width: 100%; /* Take full width */
+        width: 100%;
     }
 
     .form-group input[type="text"],
@@ -405,21 +407,21 @@ h1, h2, h3 {
     .form-group input[type="url"],
     .form-group select,
     .form-group textarea {
-        font-size: 0.95em; /* Adjust font size for mobile */
+        font-size: 0.95em;
     }
 
     .action-buttons {
-        justify-content: center; /* Center buttons on small screens */
+        justify-content: center;
     }
 
     .modal-content {
         width: 95%;
-        margin: 5% auto; /* Adjust margin */
+        margin: 5% auto;
         padding: 15px;
     }
 
     h1 {
-        font-size: 1.5em; /* Adjust heading size */
+        font-size: 1.5em;
     }
     h2 {
         font-size: 1.2em;
@@ -429,21 +431,11 @@ h1, h2, h3 {
     }
 
     .button {
-        padding: 8px 12px; /* Adjust button padding */
+        padding: 8px 12px;
         font-size: 0.95em;
     }
-}
 
-/* --- Draggable Item Styles (for later) --- */
-.draggable-item {
-    cursor: move; /* Indicate draggable */
-    /* Add some visual cue */
-    /* padding-left: 20px;
-    background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-grip-vertical" viewBox="0 0 16 16"><path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm-3 3a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>');
-    background-repeat: no-repeat;
-    background-position: 5px center; */
-}
-
-.drag-over {
-    border-top: 2px dashed #0d6efd; /* Highlight drop target */
+    .list-item-actions {
+        display: flex;
+    }
 }

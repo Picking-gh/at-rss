@@ -21,10 +21,10 @@ func TestConfigParsing(t *testing.T) {
 			yamlStr: `
 feed1:
   downloaders:
-    - type: aria2c
-      url: "ws://localhost:6800/jsonrpc"
-      token: "abcd"
-  feed: "http://example.com/feed1"
+  - type: aria2c
+    url: "ws://localhost:6800/jsonrpc"
+    token: "abcd"
+  feeds: "http://example.com/feed1"
   interval: 30`,
 			wantErr: false,
 		},
@@ -33,12 +33,12 @@ feed1:
 			yamlStr: `
 feed2:
   downloaders:
-    - type: transmission
-      host: "localhost"
-      port: 9091
-  feed:
-    - http://example.com/feed1
-    - http://example.com/feed2`,
+  - type: transmission
+    host: "localhost"
+    port: 9091
+  feeds:
+  - http://example.com/feed1
+  - http://example.com/feed2`,
 			wantErr: false,
 		},
 		{
@@ -46,15 +46,15 @@ feed2:
 			yamlStr: `
 feed3:
   downloaders:
-    - type: aria2c
-      url: "ws://localhost:6800/jsonrpc"
-  feed: "http://example.com/feed3"
+  - type: aria2c
+    url: "ws://localhost:6800/jsonrpc"
+  feeds: "http://example.com/feed3"
   filter:
     include:
-      - "keyword1,keyword2"
-      - "keyword3"
+    - "keyword1,keyword2"
+    - "keyword3"
     exclude:
-      - "badword1"
+    - "badword1"
   extracter:
     tag: "link"
     pattern: "[0-9a-f]{40}"`,
@@ -65,8 +65,8 @@ feed3:
 			yamlStr: `
 feed4:
   downloaders:
-    - type: aria2c # URL will default
-  feed: "http://example.com/feed4"`,
+  - type: aria2c # URL will default
+  feeds: "http://example.com/feed4"`,
 			wantErr: false,
 		},
 		{
@@ -74,11 +74,11 @@ feed4:
 			yamlStr: `
 feed5:
   downloaders:
-    - type: aria2c
-      token: "abc"
-    - type: transmission
-      host: "nas.local"
-  feed: "http://example.com/feed5"`,
+  - type: aria2c
+    token: "abc"
+  - type: transmission
+    host: "nas.local"
+  feeds: "http://example.com/feed5"`,
 			wantErr: false,
 		},
 		{
@@ -86,12 +86,12 @@ feed5:
 			yamlStr: `
 feed6:
   downloaders:
-    - type: aria2c
-      url: "ws://localhost:6800/jsonrpc"
-    - type: aria2c
-      url: "ws://remote:6800/jsonrpc"
-      token: "def"
-  feed: "http://example.com/feed6"`,
+  - type: aria2c
+    url: "ws://localhost:6800/jsonrpc"
+  - type: aria2c
+    url: "ws://remote:6800/jsonrpc"
+    token: "def"
+  feeds: "http://example.com/feed6"`,
 			wantErr: false,
 		},
 	}
@@ -134,9 +134,9 @@ func TestLoadConfig(t *testing.T) {
 			yamlContent: `
 feed1:
   downloaders:
-    - type: aria2c
-      host: "custom.aria2c.host" # Custom host, default port/path/http
-  feed: "http://example.com/feed1"`,
+  - type: aria2c
+    host: "custom.aria2c.host" # Custom host, default port/path/http
+  feeds: "http://example.com/feed1"`,
 			wantTasks: 1,
 			expectedData: []expectedTask{
 				// Note: ws:// is no longer directly supported in config, it defaults to http/https
@@ -148,10 +148,10 @@ feed1:
 			yamlContent: `
 feed2:
   downloaders:
-    - type: aria2c # Uses default URL
-    - type: transmission
-      host: "nas.local" # Custom host, default port
-  feed: ["http://example.com/feed2a", "http://example.com/feed2b"] # Multiple feeds
+  - type: aria2c # Uses default URL
+  - type: transmission
+    host: "nas.local" # Custom host, default port
+  feeds: ["http://example.com/feed2a", "http://example.com/feed2b"] # Multiple feeds
   interval: 20 # Custom interval`,
 			wantTasks: 1,
 			expectedData: []expectedTask{
@@ -163,10 +163,10 @@ feed2:
 			yamlContent: `
 task_a: # Uses defaults
   downloaders: [{type: aria2c}]
-  feed: "http://a.com"
+  feeds: "http://a.com"
 task_b: # Custom interval and downloader
   downloaders: [{type: transmission, host: "192.168.1.1", port: 9091}]
-  feed: "http://b.com"
+  feeds: "http://b.com"
   interval: 5`,
 			wantTasks: 2,
 			expectedData: []expectedTask{
@@ -179,8 +179,8 @@ task_b: # Custom interval and downloader
 			yamlContent: `
 feed_tm_defaults:
   downloaders:
-    - type: transmission # Uses default host/port
-  feed: "http://example.com/tm_defaults"`,
+  - type: transmission # Uses default host/port
+  feeds: "http://example.com/tm_defaults"`,
 			wantTasks: 1,
 			expectedData: []expectedTask{
 				{FeedURLCount: 1, DownloaderCount: 1, FirstDownloaderType: "transmission", FirstDownloaderRpcUrl: defaultTransmissionHttpUrl, FetchIntervalMinutes: defaultFetchInterval},
@@ -278,17 +278,17 @@ feed:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var cfg struct {
-				Feed FeedConfig `yaml:"feed"` // Field name must match YAML key
+				Feeds FeedsConfig `yaml:"feed"` // Field name must match YAML key
 			}
 			if err := yaml.Unmarshal([]byte(tt.yamlStr), &cfg); err != nil {
 				t.Fatalf("Unmarshal failed: %v", err)
 			}
-			if len(cfg.Feed.URLs) != len(tt.want) {
-				t.Fatalf("Got %d URLs, want %d", len(cfg.Feed.URLs), len(tt.want))
+			if len(cfg.Feeds) != len(tt.want) {
+				t.Fatalf("Got %d URLs, want %d", len(cfg.Feeds), len(tt.want))
 			}
 			for i := range tt.want {
-				if cfg.Feed.URLs[i] != tt.want[i] {
-					t.Errorf("URL[%d] = %q, want %q", i, cfg.Feed.URLs[i], tt.want[i])
+				if cfg.Feeds[i] != tt.want[i] {
+					t.Errorf("URL[%d] = %q, want %q", i, cfg.Feeds[i], tt.want[i])
 				}
 			}
 		})
