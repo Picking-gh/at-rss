@@ -1,3 +1,15 @@
+// SVG Icon Constants
+const EDIT_ICON_SVG = `
+<svg width='19px' height='19px' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
+    <path d='M20,16v4a2,2,0,0,1-2,2H4a2,2,0,0,1-2-2V6A2,2,0,0,1,4,4H8' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/>
+    <polygon points='12.5 15.8 22 6.2 17.8 2 8.3 11.5 8 16 12.5 15.8' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/>
+</svg>`;
+
+const DELETE_ICON_SVG = `
+<svg width='19px' height='19px' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
+    <path d='M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/>
+</svg>`;
+
 document.addEventListener('DOMContentLoaded', () => {
     const taskListUl = document.getElementById('task-list');
     const taskFormContainer = document.getElementById('task-form-container');
@@ -96,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Ensure the task exists in currentTasks, especially for non-new tasks
         if (!currentTasks[taskName] && !isNew) {
-            alert(`Internal Error: Configuration for task "${taskName}" not found.`);
+            alert(`Internal Error: Configuration for task '${taskName}' not found.`);
             return null;
         }
         // If it's a new task and doesn't exist yet (e.g., during initial form setup), create a placeholder
@@ -118,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const taskConfig = currentTasks[taskName];
         if (!taskConfig) {
             clearTaskDetailPanel();
-            alert(`Task "${taskName}" not found in currentTasks.`);
+            alert(`Task '${taskName}' not found in currentTasks.`);
             return;
         }
 
@@ -152,13 +164,13 @@ document.addEventListener('DOMContentLoaded', () => {
         actionDiv.classList.add('action-buttons');
         const saveButton = document.createElement('button');
         saveButton.type = 'submit';
-        saveButton.style.display = "none";
-        saveButton.textContent = form.dataset.isNew === "true" ? 'Create Task' : 'Save Changes';
+        saveButton.style.display = 'none';
+        saveButton.textContent = form.dataset.isNew === 'true' ? 'Create Task' : 'Save Changes';
         saveButton.classList.add('button', 'primary-button');
-        if (form.dataset.isNew === "true" || taskConfig.isModified) {
-            saveButton.style.display = "block";
+        if (form.dataset.isNew === 'true' || taskConfig.isModified) {
+            saveButton.style.display = 'block';
         } else {
-            saveButton.style.display = "none";
+            saveButton.style.display = 'none';
         }
         actionDiv.appendChild(saveButton);
 
@@ -330,17 +342,8 @@ document.addEventListener('DOMContentLoaded', () => {
         li.innerHTML = `
             <span><span class="drag-handle">::</span> <strong>Type:</strong> ${downloader.type} | <strong>RPC URL:</strong> ${getRpcUrl(downloader)}</span>
             <div class="list-item-actions">
-                <button type="button" class="edit-downloader-btn button secondary-button">
-                <svg width="19px" height="19px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M20,16v4a2,2,0,0,1-2,2H4a2,2,0,0,1-2-2V6A2,2,0,0,1,4,4H8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
-                    <polygon fill="none" points="12.5 15.8 22 6.2 17.8 2 8.3 11.5 8 16 12.5 15.8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
-                </svg>
-                </button>
-                <button type="button" class="delete-downloader-btn button danger-button">
-                    <svg width="19px" height="19px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
+                <button type="button" class="edit-downloader-btn button secondary-button">${EDIT_ICON_SVG}</button>
+                <button type="button" class="delete-downloader-btn button danger-button">${DELETE_ICON_SVG}</button>
             </div>
         `;
         li.querySelector('.edit-downloader-btn').addEventListener('click', () => editDownloader(index));
@@ -348,12 +351,11 @@ document.addEventListener('DOMContentLoaded', () => {
         ul.appendChild(li);
     }
 
-    function addDownloader() { // Doesn't need ul passed anymore
-        openDownloaderModal(); // Open modal to add new
+    function addDownloader() {
+        openDownloaderModal();
     }
 
     function editDownloader(index) {
-        // Edit Downloader handler
         const context = getCurrentTaskContext();
         if (!context) return;
         const { taskName, taskConfig } = context;
@@ -361,20 +363,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (downloaderData) {
             openDownloaderModal(downloaderData, index);
         } else {
-            alert("Could not find downloader data to edit.");
+            alert('Could not find downloader data to edit.');
             console.error(`editDownloader: Index ${index} out of bounds or downloaders array missing for task ${taskName}`);
         }
     }
 
     function deleteDownloader(index) {
-        // Delete Downloader handler
         deleteTaskListItem('downloaders', index, `Are you sure you want to delete downloader #${index + 1}?`);
     }
 
 
     function renderFeedSection(form, feeds) {
         const listId = 'feed-list';
-        createListSection(form, 'Feeds', feeds, renderFeedItem, addFeedToList, listId);
+        createListSection(form, 'Feeds', feeds, renderFeedItem, addFeed, listId);
     }
 
     function renderFeedItem(ul, feed, index) {
@@ -388,62 +389,47 @@ document.addEventListener('DOMContentLoaded', () => {
         li.innerHTML = `
             <span><span class="drag-handle">::</span> ${feed}</span>
             <div class="list-item-actions">
-                <button type="button" class="delete-feed-btn button danger-button">
-                    <svg width="19px" height="19px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
+                <button type="button" class="edit-feed-btn button secondary-button">${EDIT_ICON_SVG}</button>
+                <button type="button" class="delete-feed-btn button danger-button">${DELETE_ICON_SVG}</button>
             </div>
         `;
+        li.querySelector('.edit-feed-btn').addEventListener('click', () => editFeed(index));
         li.querySelector('.delete-feed-btn').addEventListener('click', () => deleteFeed(index));
         ul.appendChild(li);
     }
 
-    function addFeedToList() {
-        openModal("Add a New Feed", (body) => {
-            const form = document.createElement('form');
-            const input = createTextField(form, 'newFeedInput', 'Feed URL', '', false, 'https://example.com/feed.xml');
-            input.required = true;
+    function addFeed() {
+        const context = getCurrentTaskContext();
+        if (!context) return false;
+        const { taskConfig } = context;
 
-            const errorDiv = document.createElement('div');
-            errorDiv.style.color = 'red';
-            errorDiv.style.marginTop = '5px';
-            form.appendChild(errorDiv);
+        openFeedAndKeywordModal({
+            title: 'Add a New Feed',
+            label: 'Feed URL',
+            placeholder: 'https://example.com/feed.xml',
+            onSave: (value) => {
+                if (!taskConfig.feeds) taskConfig.feeds = [];
+                addTaskListItem('feeds', value);
+            }
+        });
+    }
 
-            const actionDiv = document.createElement('div');
-            actionDiv.classList.add('action-buttons');
-            const addButton = document.createElement('button');
-            addButton.type = 'submit';
-            addButton.textContent = 'Add';
-            addButton.classList.add('button', 'primary-button');
-            actionDiv.appendChild(addButton);
-            form.appendChild(actionDiv);
+    function editFeed(index) {
+        const context = getCurrentTaskContext();
+        if (!context) return;
+        const { taskConfig } = context;
+        const feedUrl = taskConfig?.feeds?.[index];
 
-            form.addEventListener('submit', (e) => {
-                e.preventDefault();
-                errorDiv.textContent = '';
-                const newFeed = input.value.trim();
-
-                if (newFeed) {
-                    const context = getCurrentTaskContext();
-                    if (!context) {
-                        closeModal();
-                        return;
-                    }
-                    const { taskConfig } = context;
-
-                    if (!taskConfig.feeds) {
-                        taskConfig.feeds = [];
-                    }
-                    addTaskListItem('feeds', newFeed);
-                    closeModal();
-                } else {
-                    errorDiv.textContent = 'Please enter a valid feed URL.';
-                }
-            });
-
-            body.appendChild(form);
-            setTimeout(() => input.focus(), 0);
+        openFeedAndKeywordModal({
+            title: 'Edit Feed',
+            label: 'Feed URL',
+            value: feedUrl,
+            placeholder: 'https://example.com/feed.xml',
+            onSave: (value) => {
+                taskConfig.feeds[index] = value;
+                taskConfig.isModified = true;
+                renderTaskDetail(context.taskName);
+            }
         });
     }
 
@@ -460,7 +446,6 @@ document.addEventListener('DOMContentLoaded', () => {
             addButton.textContent = 'Add Filter';
             addButton.classList.add('button', 'secondary-button');
             addButton.addEventListener('click', () => {
-                // Use generic toggle function
                 toggleTaskSection('filter', { include: [], exclude: [] });
             });
             section.appendChild(addButton);
@@ -493,44 +478,37 @@ document.addEventListener('DOMContentLoaded', () => {
         keywords.forEach((keyword, index) => renderKeywordItem(ul, keyword, index, deleteFunc));
         subSection.appendChild(ul);
 
-        const addForm = document.createElement('div');
-        addForm.classList.add('add-item-form');
-        const keywordInput = document.createElement('input');
-        keywordInput.type = 'text';
-        keywordInput.placeholder = 'Enter new keyword(s)';
-        const addButton = document.createElement('button');
-        addButton.type = 'button';
-        addButton.textContent = 'Add';
-        addButton.classList.add('button', 'secondary-button');
-        addButton.addEventListener('click', () => {
-            const newKeyword = keywordInput.value.trim();
-            if (newKeyword) {
-                addFunc(newKeyword); // Pass only the keyword to the add function
-                keywordInput.value = '';
-            } else {
-                alert('Please enter a keyword.');
-            }
+        const addKeywordButton = document.createElement('button');
+        addKeywordButton.type = 'button';
+        addKeywordButton.textContent = `Add ${title.replace(' Keywords', '')}`;
+        addKeywordButton.classList.add('button', 'secondary-button', 'add-item-button');
+        addKeywordButton.addEventListener('click', () => {
+            openFeedAndKeywordModal({
+                title: `Add ${title}`,
+                label: 'Keyword',
+                placeholder: 'Enter keyword',
+                onSave: (value) => {
+                    const success = addFunc(value);
+                }
+            });
         });
-        addForm.appendChild(keywordInput);
-        addForm.appendChild(addButton);
-        subSection.appendChild(addForm);
+        subSection.appendChild(addKeywordButton);
 
         parent.appendChild(subSection);
     }
 
     function renderKeywordItem(ul, keyword, index, deleteFunc) {
         const li = document.createElement('li');
-        li.dataset.index = index; // Store index for deletion
+        li.dataset.index = index;
+        const listType = ul.id.includes('include') ? 'include' : 'exclude';
         li.innerHTML = `
             <span>${keyword}</span>
             <div class="list-item-actions">
-                <button type="button" class="delete-keyword-btn button danger-button">
-                    <svg width="19px" height="19px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </button>
+                <button type="button" class="edit-keyword-btn button secondary-button">${EDIT_ICON_SVG}</button>
+                <button type="button" class="delete-keyword-btn button danger-button">${DELETE_ICON_SVG}</button>
             </div>
         `;
+        li.querySelector('.edit-keyword-btn').addEventListener('click', () => editKeyword(listType, index));
         li.querySelector('.delete-keyword-btn').addEventListener('click', () => deleteFunc(index));
         ul.appendChild(li);
     }
@@ -551,6 +529,23 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteTaskListItem('filter.exclude', index, 'Are you sure you want to delete this exclude keyword?');
     }
 
+    function editKeyword(listType, index) {
+        const context = getCurrentTaskContext();
+        if (!context) return;
+        const { taskConfig } = context;
+        const currentKeyword = taskConfig?.filter?.[listType]?.[index];
+
+        openFeedAndKeywordModal({
+            title: `Edit ${listType === 'include' ? 'Include' : 'Exclude'} Keyword`,
+            label: 'Keyword',
+            value: currentKeyword,
+            onSave: (value) => {
+                taskConfig.filter[listType][index] = value;
+                taskConfig.isModified = true;
+                renderTaskDetail(context.taskName);
+            }
+        });
+    }
 
     function renderExtracterSection(form, extracter) {
         const section = createFormSection(form, 'Extracter');
@@ -1058,6 +1053,47 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             typeSelect.addEventListener('change', toggleSpecificFields);
             toggleSpecificFields(); // Initial call
+        });
+    }
+
+    function openFeedAndKeywordModal(options) {
+        const { title, label, value = '', placeholder = '', onSave } = options;
+        const isEditing = value !== '';
+
+        openModal(title, (body) => {
+            const form = document.createElement('form');
+            const input = createTextField(form, 'genericInput', label, value, false, placeholder);
+            input.required = true;
+
+            const errorDiv = document.createElement('div');
+            errorDiv.style.color = 'red';
+            errorDiv.style.marginTop = '5px';
+            form.appendChild(errorDiv);
+
+            const actionDiv = document.createElement('div');
+            actionDiv.classList.add('action-buttons');
+            const saveButton = document.createElement('button');
+            saveButton.type = 'submit';
+            saveButton.textContent = isEditing ? 'Save' : 'Add';
+            saveButton.classList.add('button', 'primary-button');
+            actionDiv.appendChild(saveButton);
+            form.appendChild(actionDiv);
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                errorDiv.textContent = '';
+                const newValue = input.value.trim();
+
+                if (newValue) {
+                    onSave(newValue);
+                    closeModal();
+                } else {
+                    errorDiv.textContent = `Please enter a valid ${label.toLowerCase()}.`;
+                }
+            });
+
+            body.appendChild(form);
+            setTimeout(() => input.focus(), 0);
         });
     }
 
