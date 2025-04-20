@@ -23,7 +23,7 @@ h1, h2, h3 {
 
 .main-layout {
     display: flex;
-    gap: 20px;
+    gap: 15px;
     margin-top: 20px;
 }
 
@@ -43,8 +43,6 @@ h1, h2, h3 {
     margin: 10px 0;
     max-height: 70vh;
     overflow-y: auto;
-    border: 1px solid #eee;
-    border-radius: 4px;
 }
 
 #task-list li {
@@ -210,9 +208,13 @@ h1, h2, h3 {
     word-break: break-all;
 }
 
+.list-item-actions {
+    display: flex;
+}
+
 .list-item-actions button {
     margin-left: 8px;
-    padding: 3px 6px;
+    padding: 3px 3px;
     font-size: 0.85em;
     line-height: 1;
 }
@@ -368,23 +370,8 @@ h1, h2, h3 {
     #task-list {
         display: flex;
         flex-wrap: wrap;
-        border: none;
-        border-radius: 4px;
         gap: 8px;
-        padding: 5px;
         margin-bottom: 0;
-    }
-
-    #task-list li {
-        display: inline-block;
-        vertical-align: top;
-    }
-
-    .task-button {
-        width: auto;
-        display: inline-flex;
-        gap: 0.5em;
-        text-align: center;
     }
 
     #add-task-btn {
@@ -410,12 +397,7 @@ h1, h2, h3 {
         font-size: 0.95em;
     }
 
-    .action-buttons {
-        justify-content: center;
-    }
-
     .modal-content {
-        width: 95%;
         margin: 5% auto;
         padding: 15px;
     }
@@ -433,9 +415,5 @@ h1, h2, h3 {
     .button {
         padding: 8px 12px;
         font-size: 0.95em;
-    }
-
-    .list-item-actions {
-        display: flex;
     }
 }

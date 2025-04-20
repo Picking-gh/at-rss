@@ -31,9 +31,9 @@ Create `at-rss.conf` in YAML format:
 # Example configuration
 my_feed:
   downloader:
-    - type: aria2c
-      token: "your_token"
-      autoCleanUp: true
+  - type: aria2c
+    token: "your_token"
+    autoCleanUp: true
   feed: "https://example.com/rss"
   filter:
     include: ["1080p", "x264"]

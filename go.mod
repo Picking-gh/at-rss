@@ -1,8 +1,8 @@
 module github.com/Picking-gh/at-rss
 
-go 1.24.0
+go 1.23.0
 
-toolchain go1.24.1
+toolchain go1.24.2
 
 require (
 	github.com/anacrolix/torrent v1.58.1
