@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>at-rss configure</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>at-rss configure</h1>
+
+        <div class="main-layout">
+            <div class="task-list-panel">
+                <h2>Tasks</h2>
+                <ul id="task-list">
+                    <!-- Task items will be dynamically populated by script.js -->
+                    <!-- Example: <li><button class="task-button" data-task-name="Example1">Example1</button></li> -->
+                    <!-- Example: <li><button id="add-task-btn" class="button add-button">+</button></li> -->
+                </ul>
+            </div>
+
+            <div class="task-detail-panel">
+                <h2>Details</h2>
+                <div id="task-form-container">
+                    <!-- The form will be dynamically generated/displayed by script.js -->
+                    <p>Please select a task from the left or add a new task.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal (for adding/editing downloaders, etc.) -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h3 id="modal-title"></h3>
+            <div id="modal-body">
+                <!-- Modal content will be dynamically populated by script.js -->
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js" type="module" ></script>
+</body>
+</html>
