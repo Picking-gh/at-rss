@@ -38,11 +38,78 @@
         <!-- Content goes here -->
       </section>
       <footer class="modal-footer">
-        <slot name="footer">
-          <!-- Default footer button if needed -->
-          <!-- <button class="button" on:click={closeModal}>Close</button> -->
-        </slot>
+        <slot name="footer"></slot>
+        <!-- footer buttons go here -->
       </footer>
     </div>
   </div>
 {/if}
+
+<style>
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000; /* Ensure it's on top */
+  }
+
+  .modal-content {
+    background-color: white;
+    padding: 1.5rem 2rem;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    min-width: 300px;
+    max-width: 600px; /* Adjust as needed */
+    max-height: 80vh; /* Limit height */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent content overflow */
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 0.8rem;
+    margin-bottom: 1rem;
+  }
+
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.4em;
+  }
+
+  .close-button {
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #888;
+    padding: 0 0.5rem;
+  }
+  .close-button:hover {
+    color: #333;
+  }
+
+  .modal-body {
+    overflow-y: auto; /* Allow body content to scroll */
+    margin-bottom: 1rem;
+    padding-right: 5px; /* Space for scrollbar */
+  }
+
+  .modal-footer {
+    border-top: 1px solid #eee;
+    padding-top: 1rem;
+    display: flex;
+    justify-content: flex-end; /* Align buttons to the right */
+    gap: 0.5rem; /* Space between footer buttons */
+  }
+</style>

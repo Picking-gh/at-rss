@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import Modal from "./Modal.svelte"; // Import Modal
+  import Modal from "./Modal.svelte";
+  import ListItem from "./ListItem.svelte";
 
   // Define the structure for the filter object
   interface FilterConfig {
@@ -12,24 +13,12 @@
 
   const dispatch = createEventDispatcher();
 
-  // --- SVG Icons ---
-  const EDIT_ICON_SVG = `
-  <svg width='16px' height='16px' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
-      <path d='M20,16v4a2,2,0,0,1-2,2H4a2,2,0,0,1-2-2V6A2,2,0,0,1,4,4H8' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/>
-      <polygon points='12.5 15.8 22 6.2 17.8 2 8.3 11.5 8 16 12.5 15.8' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/>
-  </svg>`;
-
-  const DELETE_ICON_SVG = `
-  <svg width='16px' height='16px' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
-      <path d='M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/>
-  </svg>`;
-
   // --- Local State ---
   // Use derived state or direct binding if possible, but for complex objects, local copy might be easier
-  let internalFilter: FilterConfig = filter ? JSON.parse(JSON.stringify(filter)) : { include: [], exclude: [] };
+  let internalFilter: FilterConfig = filter ? structuredClone(filter) : { include: [], exclude: [] };
 
   // Update internal state when the prop changes
-  $: internalFilter = filter ? JSON.parse(JSON.stringify(filter)) : { include: [], exclude: [] };
+  $: internalFilter = filter ? structuredClone(filter) : { include: [], exclude: [] };
 
   // --- Modal State ---
   let showKeywordModal = false;
@@ -132,7 +121,7 @@
   </div>
   <div slot="footer">
     <button type="button" class="button secondary-button" on:click={() => (showKeywordModal = false)}>Cancel</button>
-    <button type="button" class="button primary-button" on:click={saveKeyword}>Save Keyword</button>
+    <button type="button" class="button primary-button" on:click={saveKeyword}>Save</button>
   </div>
 </Modal>
 
@@ -147,17 +136,15 @@
       {#if internalFilter.include && internalFilter.include.length > 0}
         <ul class="list-items keyword-list">
           {#each internalFilter.include as keyword, index (index)}
-            <li class="list-item">
-              <span class="item-content">{keyword}</span>
-              <div class="list-item-actions">
-                <button type="button" class="button icon-button secondary-button" on:click={() => openEditKeywordModal("include", index)} title="Edit Keyword">
-                  {@html EDIT_ICON_SVG}
-                </button>
-                <button type="button" class="button icon-button danger-button" on:click={() => deleteKeyword("include", index)} title="Delete Keyword">
-                  {@html DELETE_ICON_SVG}
-                </button>
-              </div>
-            </li>
+            <ListItem
+              item={keyword}
+              index={index}
+              draggable={false}
+              on:edit={() => openEditKeywordModal("include", index)}
+              on:delete={() => deleteKeyword("include", index)}
+            >
+              {keyword}
+            </ListItem>
           {/each}
         </ul>
       {:else}
@@ -172,17 +159,15 @@
       {#if internalFilter.exclude && internalFilter.exclude.length > 0}
         <ul class="list-items keyword-list">
           {#each internalFilter.exclude as keyword, index (index)}
-            <li class="list-item">
-              <span class="item-content">{keyword}</span>
-              <div class="list-item-actions">
-                <button type="button" class="button icon-button secondary-button" on:click={() => openEditKeywordModal("exclude", index)} title="Edit Keyword">
-                  {@html EDIT_ICON_SVG}
-                </button>
-                <button type="button" class="button icon-button danger-button" on:click={() => deleteKeyword("exclude", index)} title="Delete Keyword">
-                  {@html DELETE_ICON_SVG}
-                </button>
-              </div>
-            </li>
+            <ListItem
+              item={keyword}
+              index={index}
+              draggable={false}
+              on:edit={() => openEditKeywordModal("exclude", index)}
+              on:delete={() => deleteKeyword("exclude", index)}
+            >
+              {keyword}
+            </ListItem>
           {/each}
         </ul>
       {:else}

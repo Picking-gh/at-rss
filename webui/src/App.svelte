@@ -108,7 +108,7 @@
       <p class="error">Error: {error}</p>
       <button on:click={loadTasks}>Retry</button>
     {:else}
-      <ul class="task-list">
+      <ul id="task-list">
         {#each Object.keys(tasks) as taskName (taskName)}
           <li>
             <button class="task-button" class:active={taskName === selectedTaskName} class:new-task={tasks[taskName].isNew} class:modified-task={tasks[taskName].isModified} on:click={() => selectTask(taskName)}>
@@ -117,13 +117,14 @@
           </li>
         {/each}
         <li class="add-task-item">
-          <button class="button task-button add-button" on:click={() => showNewTaskForm()}> + </button>
+          <button id="add-task-btn" class="button task-button add-button" on:click={() => showNewTaskForm()}> + </button>
         </li>
       </ul>
     {/if}
   </aside>
 
   <section class="main-content task-detail-panel">
+    <h2>Details</h2>
     {#if isAddingTask}
       <TaskDetail isNew={true} taskName="" taskConfig={{ interval: 10, downloaders: [], feeds: [], filter: null, extracter: null }} {apiFetch} on:taskSaved={handleNewTaskCreated} on:cancelAdd={() => (isAddingTask = false)} />
     {:else if selectedTaskName && tasks[selectedTaskName]}

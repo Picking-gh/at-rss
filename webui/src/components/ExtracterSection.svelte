@@ -12,10 +12,10 @@
   const dispatch = createEventDispatcher();
 
   // --- Local State ---
-  let internalExtracter: ExtracterConfig = extracter ? JSON.parse(JSON.stringify(extracter)) : {};
+  let internalExtracter: ExtracterConfig = extracter ? structuredClone(extracter) : {};
 
   // Update internal state when the prop changes
-  // $: internalExtracter = extracter ? JSON.parse(JSON.stringify(extracter)) : {};
+  // $: internalExtracter = extracter ? structuredClone(extracter) : {};
 
   // --- Event Handlers ---
   function handleInputChange() {
@@ -49,7 +49,6 @@
         <option value="guid">guid</option>
         <!-- Add other types if supported -->
       </select>
-      <small>Selector for the container of each item/entry.</small>
     </div>
 
     <div class="form-group">
@@ -58,10 +57,9 @@
         type="text"
         id="extracter-pattern"
         bind:value={internalExtracter.pattern}
-        placeholder="e.g., magnet:\\?xt=urn:btih:([a-fA-F0-9]{40})"
+        placeholder="e.g., (?:[2-7A-Z]&#123;32&#125;|[0-9a-f]&#123;40&#125;)"
         on:input={handleInputChange}
       />
-      <small>Selector for the pattern within each item (relative to Item Selector).</small>
     </div>
 
     <!-- Remove Section Button -->

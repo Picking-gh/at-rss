@@ -1,17 +1,17 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import Modal from "./Modal.svelte"; // Import Modal
+  import Modal from "./Modal.svelte";
 
   // Define the structure for a downloader configuration
   interface DownloaderConfig {
-    type: "aria2c" | "transmission"; // Add other types if needed
+    type: "aria2c" | "transmission";
     host?: string;
-    port?: number | null; // Optional, can be number or null
-    rpcPath?: string; // Optional string
+    port?: number | null;
+    rpcPath?: string;
     token?: string;
-    username?: string; // Optional string
-    password?: string; // Optional string
-    useHttps?: boolean; // Optional boolean
+    username?: string;
+    password?: string;
+    useHttps?: boolean;
     autoCleanUp?: boolean;
   }
 
@@ -20,17 +20,7 @@
 
   const dispatch = createEventDispatcher();
 
-  // --- SVG Icons (Consider moving to a dedicated utility or component) ---
-  const EDIT_ICON_SVG = `
-  <svg width='16px' height='16px' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
-      <path d='M20,16v4a2,2,0,0,1-2,2H4a2,2,0,0,1-2-2V6A2,2,0,0,1,4,4H8' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/>
-      <polygon points='12.5 15.8 22 6.2 17.8 2 8.3 11.5 8 16 12.5 15.8' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/>
-  </svg>`;
-
-  const DELETE_ICON_SVG = `
-  <svg width='16px' height='16px' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
-      <path d='M10 12V17 M14 12V17 M4 7H20 M6 10V18C6 19.66 7.34 21 9 21H15C16.66 21 18 19.66 18 18V10 M9 5C9 3.9 9.9 3 11 3H13C14.1 3 15 3.9 15 5V7H9V5Z' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/>
-  </svg>`;
+  import ListItem from "./ListItem.svelte";
 
   // --- Modal State ---
   let showDownloaderModal = false;
@@ -45,7 +35,7 @@
     username: undefined,
     password: undefined,
     useHttps: false,
-    autoCleanUp: false
+    autoCleanUp: false,
   };
   let currentDownloaderData: DownloaderConfig = { ...defaultDownloader }; // Use the interface
   let editingDownloaderIndex: number | null = null;
@@ -84,7 +74,7 @@
   function openEditModal(index: number) {
     modalTitle = "Edit Downloader";
     // Make a deep copy to avoid modifying the original array directly during editing
-    currentDownloaderData = JSON.parse(JSON.stringify(downloaders[index]));
+    currentDownloaderData = structuredClone(downloaders[index]);
     // Ensure all potential fields exist, even if undefined in original data
     currentDownloaderData = { ...defaultDownloader, ...currentDownloaderData };
     editingDownloaderIndex = index;
@@ -116,7 +106,7 @@
     // Handle optional strings: Convert empty strings to undefined
     dataToSave.token = dataToSave.token || undefined;
     dataToSave.username = dataToSave.username?.trim() || undefined;
-    dataToSave.password = dataToSave.password|| undefined;
+    dataToSave.password = dataToSave.password || undefined;
     dataToSave.rpcPath = dataToSave.rpcPath?.trim() || undefined;
     dataToSave.useHttps = dataToSave.useHttps || false;
     dataToSave.autoCleanUp = dataToSave.autoCleanUp || false;
@@ -131,7 +121,7 @@
       updatedDownloaders = [...downloaders, dataToSave];
     }
     dispatch("update:downloaders", updatedDownloaders);
-    showDownloaderModal = false; // Close modal
+    showDownloaderModal = false;
   }
 
   function handleDelete(index: number) {
@@ -145,59 +135,35 @@
   }
 
   // --- Drag and Drop Handlers ---
-  function handleDragStart(event: DragEvent, index: number) {
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", index.toString()); // Store index
-      dragStartIndex = index;
-      (event.target as HTMLLIElement).classList.add("dragging");
-    }
+  function handleDragStart(event: CustomEvent) {
+    dragStartIndex = event.detail.index;
   }
 
-  function handleDragOver(event: DragEvent, index: number) {
-    event.preventDefault(); // Necessary to allow drop
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = "move";
-    }
-    dragOverIndex = index; // Keep track of the element being dragged over
-    // Add visual cue to the list item being hovered over
-    const targetElement = event.currentTarget as HTMLLIElement;
-    // Avoid adding class to the item being dragged
-    if (dragStartIndex !== index) {
-      targetElement.classList.add("drag-over");
-    }
+  function handleDragOver(event: CustomEvent) {
+    dragOverIndex = event.detail.index;
   }
 
-  function handleDragLeave(event: DragEvent) {
-    // Remove visual cue when dragging leaves the element
-    (event.currentTarget as HTMLLIElement).classList.remove("drag-over");
+  function handleDragLeave() {
     dragOverIndex = null;
   }
 
-  function handleDrop(event: DragEvent, dropIndex: number) {
-    event.preventDefault();
-    (event.currentTarget as HTMLLIElement).classList.remove("drag-over"); // Clean up visual cue
+  function handleDrop(event: CustomEvent) {
+    const dropIndex = event.detail.index;
 
     if (dragStartIndex === null || dragStartIndex === dropIndex) {
-      dragStartIndex = null; // Reset if dropped on itself or invalid start
+      dragStartIndex = null;
       return;
     }
 
     const draggedItem = downloaders[dragStartIndex];
     const remainingItems = downloaders.filter((_, i) => i !== dragStartIndex);
-
-    // Insert the dragged item at the drop index
     const reorderedDownloaders = [...remainingItems.slice(0, dropIndex), draggedItem, ...remainingItems.slice(dropIndex)];
 
     dispatch("update:downloaders", reorderedDownloaders);
-    dragStartIndex = null; // Reset state
+    dragStartIndex = null;
   }
 
-  function handleDragEnd(event: DragEvent) {
-    // Clean up dragging class and reset state
-    (event.target as HTMLLIElement).classList.remove("dragging");
-    // Also remove any lingering drag-over classes if the drop happened outside a valid target
-    document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
+  function handleDragEnd() {
     dragStartIndex = null;
     dragOverIndex = null;
   }
@@ -211,7 +177,6 @@
       <select id="downloader-type" bind:value={currentDownloaderData.type} required>
         <option value="aria2c">Aria2c</option>
         <option value="transmission">Transmission</option>
-        <!-- Add other types if supported -->
       </select>
     </div>
     <div class="form-group">
@@ -224,29 +189,35 @@
         type="number"
         id="downloader-port"
         bind:value={currentDownloaderData.port}
-        placeholder="e.g., 6800 (Aria2c), 9091 (Transmission)"
+        placeholder={currentDownloaderData.type === "aria2c" ? "e.g., 6800" : "e.g., 9091"}
         min="1"
         max="65535"
       />
-      <small>Leave blank for default port.</small>
     </div>
     <div class="form-group">
       <label for="downloader-rpcPath">RPC Path (Optional)</label>
-      <input type="text" id="downloader-rpcPath" bind:value={currentDownloaderData.rpcPath} placeholder="e.g., /jsonrpc (Aria2c), /transmission/rpc" />
-      <small>Leave blank for default path.</small>
+      <input
+        type="text"
+        id="downloader-rpcPath"
+        bind:value={currentDownloaderData.rpcPath}
+        placeholder={currentDownloaderData.type === "aria2c" ? "e.g., /jsonrpc" : "e.g., /transmission/rpc"}
+      />
     </div>
-    <div class="form-group">
-      <label for="downloader-token">Username (Optional)</label>
-      <input type="text" id="downloader-token" bind:value={currentDownloaderData.token} />
-    </div>
-    <div class="form-group">
-      <label for="downloader-username">Username (Optional)</label>
-      <input type="text" id="downloader-username" bind:value={currentDownloaderData.username} />
-    </div>
-    <div class="form-group">
-      <label for="downloader-password">Password (Optional)</label>
-      <input type="password" id="downloader-password" bind:value={currentDownloaderData.password} />
-    </div>
+    {#if currentDownloaderData.type === "aria2c"}
+      <div class="form-group">
+        <label for="downloader-token">Token (Optional)</label>
+        <input type="text" id="downloader-token" bind:value={currentDownloaderData.token} placeholder="Aria2c RPC secret token" />
+      </div>
+    {:else}
+      <div class="form-group">
+        <label for="downloader-username">Username (Optional)</label>
+        <input type="text" id="downloader-username" bind:value={currentDownloaderData.username} />
+      </div>
+      <div class="form-group">
+        <label for="downloader-password">Password (Optional)</label>
+        <input type="password" id="downloader-password" bind:value={currentDownloaderData.password} />
+      </div>
+    {/if}
     <div class="form-group checkbox-group">
       <input type="checkbox" id="downloader-useHttps" bind:checked={currentDownloaderData.useHttps} />
       <label for="downloader-useHttps">Use HTTPS</label>
@@ -260,46 +231,40 @@
   </form>
   <div slot="footer">
     <button type="button" class="button secondary-button" on:click={() => (showDownloaderModal = false)}>Cancel</button>
-    <button type="button" class="button primary-button" on:click={saveDownloader}>Save Downloader</button>
+    <button type="button" class="button primary-button" on:click={saveDownloader}>Save</button>
   </div>
 </Modal>
 
-<div class="list-section">
-  <h4>Downloaders</h4>
-  {#if downloaders && downloaders.length > 0}
-    <ul class="list-items" id="downloader-list">
-      {#each downloaders as downloader, index (index)}
-        <li
-          class="list-item draggable-item"
-          data-index={index}
-          draggable="true"
-          on:dragstart={(e) => handleDragStart(e, index)}
-          on:dragover={(e) => handleDragOver(e, index)}
-          on:dragleave={handleDragLeave}
-          on:drop={(e) => handleDrop(e, index)}
-          on:dragend={handleDragEnd}
-          class:drag-over={dragOverIndex === index && dragStartIndex !== index}
-        >
-          <span class="item-content">
-            <span class="drag-handle">::</span>
+<div class="form-section">
+  <h3>Downloaders</h3>
+  <div class="list-section">
+    {#if downloaders && downloaders.length > 0}
+      <ul class="list-items" id="downloader-list">
+        {#each downloaders as downloader, index (index)}
+          <ListItem
+            item={downloader}
+            {index}
+            draggable={true}
+            bind:dragStartIndex
+            bind:dragOverIndex
+            on:dragstart={handleDragStart}
+            on:dragover={handleDragOver}
+            on:dragleave={handleDragLeave}
+            on:drop={handleDrop}
+            on:dragend={handleDragEnd}
+            on:edit={() => openEditModal(index)}
+            on:delete={() => handleDelete(index)}
+          >
             <strong>Type:</strong>
             {downloader.type} | <strong>RPC URL:</strong>
             {getRpcUrl(downloader)}
-          </span>
-          <div class="list-item-actions">
-            <button type="button" class="button icon-button secondary-button" on:click={() => openEditModal(index)} title="Edit Downloader">
-              {@html EDIT_ICON_SVG}
-            </button>
-            <button type="button" class="button icon-button danger-button" on:click={() => handleDelete(index)} title="Delete Downloader">
-              {@html DELETE_ICON_SVG}
-            </button>
-          </div>
-        </li>
-      {/each}
-    </ul>
-  {:else}
-    <p class="empty-list-message">No downloaders configured.</p>
-  {/if}
+          </ListItem>
+        {/each}
+      </ul>
+    {:else}
+      <p class="empty-list-message">No downloaders configured.</p>
+    {/if}
 
-  <button type="button" class="button secondary-button add-item-button" on:click={openAddModal}> Add Downloader </button>
+    <button type="button" class="button secondary-button add-item-button" on:click={openAddModal}> Add Downloader </button>
+  </div>
 </div>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import DownloaderList from "./DownloaderList.svelte";
-  import FeedList from "./FeedList.svelte";
+  import DownloaderSection from "./DownloaderSection.svelte";
+  import FeedSection from "./FeedSection.svelte";
   import FilterSection from "./FilterSection.svelte";
   import ExtracterSection from "./ExtracterSection.svelte"; // Import ExtracterSection
 
@@ -12,7 +12,7 @@
 
   const dispatch = createEventDispatcher();
 
-  let internalTaskConfig = JSON.parse(JSON.stringify(taskConfig)); // Deep copy to avoid modifying original object directly
+  let internalTaskConfig = structuredClone(taskConfig); // Deep copy to avoid modifying original object directly
   let newTaskName: string = ""; // Store the name for a new task
   let isModified = taskConfig?.isModified || isNew || false; // Track local modifications
 
@@ -57,8 +57,6 @@
     }
 
     console.log("Saving task:", nameToSave, internalTaskConfig);
-    // TODO: Implement API call to save/update task
-    // Example:
     try {
       const method = isNew ? "POST" : "PUT";
       const url = isNew ? "/api/tasks" : `/api/tasks/${nameToSave}`; // Use nameToSave
@@ -66,8 +64,6 @@
       const bodyPayload = isNew ? { config: internalTaskConfig, name: nameToSave } : internalTaskConfig;
       const body = JSON.stringify(bodyPayload);
 
-      // Placeholder for actual API call
-      // console.log(`Mock API Call: ${method} ${url} with body:`, body);
       await apiFetch(url, { method, headers: { "Content-Type": "application/json" }, body });
 
       dispatch("taskSaved", { taskName: nameToSave, isNew }); // Notify parent with the correct name
@@ -84,8 +80,6 @@
   async function handleDelete() {
     if (confirm(`Are you sure you want to delete task "${taskName}"?`)) {
       console.log("Deleting task:", taskName);
-      // TODO: Implement API call to delete task
-      // Example:
       try {
         await apiFetch(`/api/tasks/${taskName}`, { method: "DELETE" });
         dispatch("taskDeleted", { taskName }); // Notify parent
@@ -93,16 +87,12 @@
         alert(`Failed to delete task: ${error.message}`);
         console.error("Delete Task Error:", error);
       }
-      // alert('Delete functionality not yet implemented.');
     }
   }
 
-  // --- Lifecycle ---
-  // $: console.log("TaskDetail received task:", taskName, taskConfig); // Debugging line
-
   // Reset internal state when the input taskConfig changes or when switching to/from 'new' mode
   $: {
-    internalTaskConfig = JSON.parse(JSON.stringify(taskConfig));
+    internalTaskConfig = structuredClone(taskConfig);
     isModified = taskConfig?.isModified || isNew || false;
     if (isNew) {
       newTaskName = ""; // Reset new task name when isNew becomes true
@@ -110,7 +100,7 @@
   }
 </script>
 
-<div class="task-detail-container">
+<div id="task-form-container" class="task-detail-container">
   <form on:submit|preventDefault={handleSave}>
     <!-- Basic Info Section -->
     <div class="form-section">
@@ -130,24 +120,16 @@
     </div>
 
     <!-- Downloader List Section -->
-    <div class="form-section">
-      <DownloaderList bind:downloaders={internalTaskConfig.downloaders} {apiFetch} on:update:downloaders={handleDownloaderUpdate} />
-      <!-- TODO: Add modal logic for add/edit -->
-    </div>
+    <DownloaderSection bind:downloaders={internalTaskConfig.downloaders} {apiFetch} on:update:downloaders={handleDownloaderUpdate} />
 
     <!-- Feed List Section -->
-    <div class="form-section">
-      <FeedList bind:feeds={internalTaskConfig.feeds} on:update:feeds={handleFeedUpdate} />
-      <!-- TODO: Add modal logic for add/edit -->
-    </div>
+    <FeedSection bind:feeds={internalTaskConfig.feeds} on:update:feeds={handleFeedUpdate} />
 
     <!-- Filter Section -->
     <FilterSection bind:filter={internalTaskConfig.filter} on:update:filter={handleFilterUpdate} />
-    <!-- Note: FilterSection handles its own 'form-section' div internally -->
 
     <!-- Extracter Section -->
     <ExtracterSection bind:extracter={internalTaskConfig.extracter} on:update:extracter={handleExtracterUpdate} />
-    <!-- Note: ExtracterSection handles its own 'form-section' div internally -->
 
     <!-- Action Buttons -->
     <div class="action-buttons">
