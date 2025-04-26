@@ -242,6 +242,17 @@ h3 {
   background-color: #157347;
 }
 
+#task-name-input.error {
+  border-color: #dc3545;
+}
+
+.error-message {
+  color: #dc3545;
+  font-size: 0.9em;
+  margin-top: -8px;
+  margin-bottom: 10px;
+}
+
 .action-buttons {
   margin-top: 20px;
   display: flex;

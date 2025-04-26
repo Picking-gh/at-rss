@@ -1,13 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import TaskDetail from "./components/TaskDetail.svelte"; // Import TaskDetail
+  import Modal from "./components/Modal.svelte";
+  import TaskDetail from "./components/TaskDetail.svelte";
 
   // --- State ---
   let tasks: { [key: string]: any } = {}; // Store fetched tasks {name: config}
   let selectedTaskName: string | null = null;
   let isAddingTask = false; // Flag for adding a new task
   let isLoading = true;
-  let error: string | null = null;
+  let showNameInputModal = false;
+  let newTaskName = "";
+  let nameInputError = "";
 
   // --- API Helper ---
   async function apiFetch(url: string, options: RequestInit = {}) {
@@ -21,7 +24,6 @@
       return contentType?.includes("application/json") ? await response.json() : await response.text();
     } catch (err: any) {
       console.error("API Fetch Error:", err);
-      error = err.message || "Failed to fetch data.";
       throw err; // Re-throw to allow specific handling if needed
     } finally {
       isLoading = false;
@@ -31,7 +33,6 @@
   // --- Task Loading ---
   async function loadTasks() {
     isLoading = true;
-    error = null;
     let rawTasks: any = null; // Temporary variable for the raw response
     try {
       rawTasks = await apiFetch("/api/tasks");
@@ -50,49 +51,96 @@
       }
     } catch (err) {
       // Error is handled in apiFetch, but ensure tasks is reset here too
-      tasks = {}; // Reset tasks on error
+      tasks = {};
     }
   }
 
   // --- Task Selection / Adding ---
   function selectTask(taskName: string) {
     selectedTaskName = taskName;
-    isAddingTask = false; // Ensure we are not in adding mode
-    console.log("Selected task:", taskName);
+    isAddingTask = tasks[taskName].isNew || false;
   }
 
+  // --- Adding Task ---
   function showNewTaskForm() {
     selectedTaskName = null; // Deselect any current task
+    newTaskName = "";
+    nameInputError = "";
+    showNameInputModal = true;
+  }
+
+  function checkTaskNameExists(name: string): boolean {
+    return Object.keys(tasks).some((taskName) => taskName.toLowerCase() === name.toLowerCase());
+  }
+
+  function handleTaskNameSubmit() {
+    if (!newTaskName.trim()) {
+      nameInputError = "Task name cannot be empty.";
+      return;
+    }
+
+    if (checkTaskNameExists(newTaskName)) {
+      nameInputError = `Task "${newTaskName}" already exists.`;
+      return;
+    }
+
+    // Create new task config with isNew flag
+    tasks[newTaskName] = {
+      interval: 10,
+      downloaders: [],
+      feeds: [],
+      filter: null,
+      extracter: null,
+      isNew: true,
+    };
+
+    showNameInputModal = false;
     isAddingTask = true;
-    console.log("Adding new task");
+    selectedTaskName = newTaskName;
   }
 
   // --- Event Handlers from TaskDetail ---
   function handleTaskSaved(event: CustomEvent) {
-    console.log("Task saved event received in App:", event.detail);
-    // Reload tasks to reflect changes (simple approach)
-    // A more optimized approach would be to update the specific task in the 'tasks' object
-    loadTasks();
-    // Optionally, keep the task selected or clear selection
-    // if (event.detail.isNew) {
-    //   selectedTaskName = event.detail.taskName; // Select the newly created task
-    // }
+    const { taskName } = event.detail;
+    if (tasks[taskName]) {
+      tasks[taskName].isModified = false;
+    }
   }
 
   function handleTaskDeleted(event: CustomEvent) {
-    console.log("Task deleted event received in App:", event.detail);
-    selectedTaskName = null; // Clear selection
-    isAddingTask = false;
-    loadTasks(); // Reload tasks
+    const { taskName } = event.detail;
+    if (tasks[taskName]) {
+      selectedTaskName = null;
+      delete tasks[taskName];
+      tasks = { ...tasks };
+    }
   }
 
   function handleNewTaskCreated(event: CustomEvent) {
-    console.log("New task created event received in App:", event.detail);
-    isAddingTask = false;
-    loadTasks().then(() => {
-      // Select the newly created task after reloading
-      selectedTaskName = event.detail.taskName;
-    });
+    const { taskName } = event.detail;
+    if (tasks[taskName]) {
+      isAddingTask = false;
+      tasks[taskName].isNew = false;
+      tasks[taskName].isModified = false;
+    }
+  }
+
+  function handleNewTaskCanceled(event: CustomEvent) {
+    const { taskName } = event.detail;
+    if (tasks[taskName]) {
+      selectedTaskName = null;
+      isAddingTask = false;
+      delete tasks[taskName];
+      tasks = { ...tasks };
+    }
+  }
+
+  function handleTaskModified(event: CustomEvent) {
+    const { taskName, taskConfig, isModified } = event.detail;
+    if (tasks[taskName]) {
+      tasks[taskName] = taskConfig;
+      tasks[taskName].isModified = isModified;
+    }
   }
 
   // --- Lifecycle ---
@@ -100,18 +148,37 @@
 </script>
 
 <main class="app-container main-layout">
+  <!-- Task Name Input Modal -->
+  <Modal showModal={showNameInputModal} title="New Task" on:close={() => (showNameInputModal = false)}>
+    <div slot="body">
+      <div class="form-group">
+        <label for="task-name-input">Task Name</label>
+        <input id="task-name-input" type="text" bind:value={newTaskName} class:error={nameInputError} placeholder="Input a task name" />
+        {#if nameInputError}
+          <p class="error-message">{nameInputError}</p>
+        {/if}
+      </div>
+    </div>
+    <div slot="footer">
+      <button type="button" class="button primary-button" on:click={handleTaskNameSubmit}>OK</button>
+      <button type="button" class="button secondary-button" on:click={() => (showNameInputModal = false)}>Cancel</button>
+    </div>
+  </Modal>
   <aside class="sidebar task-list-panel">
     <h2>Tasks</h2>
     {#if isLoading}
       <p>Loading tasks...</p>
-    {:else if error}
-      <p class="error">Error: {error}</p>
-      <button on:click={loadTasks}>Retry</button>
     {:else}
       <ul id="task-list">
         {#each Object.keys(tasks) as taskName (taskName)}
           <li>
-            <button class="task-button" class:active={taskName === selectedTaskName} class:new-task={tasks[taskName].isNew} class:modified-task={tasks[taskName].isModified} on:click={() => selectTask(taskName)}>
+            <button
+              class="task-button"
+              class:active={taskName === selectedTaskName}
+              class:new-task={tasks[taskName]?.isNew}
+              class:modified-task={tasks[taskName]?.isModified && !tasks[taskName]?.isNew}
+              on:click={() => selectTask(taskName)}
+            >
               {taskName}
             </button>
           </li>
@@ -126,9 +193,25 @@
   <section class="main-content task-detail-panel">
     <h2>Details</h2>
     {#if isAddingTask}
-      <TaskDetail isNew={true} taskName="" taskConfig={{ interval: 10, downloaders: [], feeds: [], filter: null, extracter: null }} {apiFetch} on:taskSaved={handleNewTaskCreated} on:cancelAdd={() => (isAddingTask = false)} />
+      <TaskDetail
+        isNew={true}
+        taskName={newTaskName}
+        taskConfig={tasks[newTaskName]}
+        {apiFetch}
+        on:taskSaved={handleNewTaskCreated}
+        on:cancelAdd={handleNewTaskCanceled}
+        on:update:modified={handleTaskModified}
+      />
     {:else if selectedTaskName && tasks[selectedTaskName]}
-      <TaskDetail isNew={false} taskName={selectedTaskName} taskConfig={tasks[selectedTaskName]} {apiFetch} on:taskSaved={handleTaskSaved} on:taskDeleted={handleTaskDeleted} />
+      <TaskDetail
+        isNew={false}
+        taskName={selectedTaskName}
+        taskConfig={tasks[selectedTaskName]}
+        {apiFetch}
+        on:taskSaved={handleTaskSaved}
+        on:taskDeleted={handleTaskDeleted}
+        on:update:modified={handleTaskModified}
+      />
     {:else if selectedTaskName}
       <p>Loading task details for {selectedTaskName}... or task data missing.</p>
     {:else}

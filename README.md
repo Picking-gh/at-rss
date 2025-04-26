@@ -22,6 +22,12 @@ A lightweight RSS feed parser that monitors RSS feeds and automatically download
    ```bash
    go build
    ```
+4. Build the webui:
+   ```bash
+   cd webui
+   npm install
+   npm run build
+   ```
 
 ## Configuration
 
@@ -50,7 +56,7 @@ my_feed:
 or
 
 ```bash
-./at-rss -c /path/to/at-rss.conf -web-listen :8080 --web-ui-dir /path/to/webui
+./at-rss -c /path/to/at-rss.conf -web-listen :8080 --web-ui-dir /path/to/webui/dist
 ```
 
 Or run as a systemd service (see at-rss.service for example).

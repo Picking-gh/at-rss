@@ -112,8 +112,8 @@
     </div>
   </div>
   <div slot="footer">
-    <button type="button" class="button secondary-button" on:click={() => (showFeedModal = false)}>Cancel</button>
     <button type="button" class="button primary-button" on:click={saveFeed}>Save</button>
+    <button type="button" class="button secondary-button" on:click={() => (showFeedModal = false)}>Cancel</button>
   </div>
 </Modal>
 

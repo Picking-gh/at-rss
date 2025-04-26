@@ -64,8 +64,8 @@
     padding: 1.5rem 2rem;
     border-radius: 8px;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-    min-width: 300px;
-    max-width: 600px; /* Adjust as needed */
+    min-width: 400px;
+    max-width: 600px;
     max-height: 80vh; /* Limit height */
     display: flex;
     flex-direction: column;
@@ -102,6 +102,7 @@
   .modal-body {
     overflow-y: auto; /* Allow body content to scroll */
     margin-bottom: 1rem;
+    padding-left: 2px;
     padding-right: 5px; /* Space for scrollbar */
   }
 
@@ -111,5 +112,12 @@
     display: flex;
     justify-content: flex-end; /* Align buttons to the right */
     gap: 0.5rem; /* Space between footer buttons */
+  }
+
+  /* --- Responsive Design --- */
+  @media (max-width: 768px) {
+    .modal-content {
+      min-width: 80%;
+    }
   }
 </style>

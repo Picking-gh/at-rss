@@ -16,7 +16,6 @@
   }
 
   export let downloaders: DownloaderConfig[] = []; // Use the interface
-  export let apiFetch: (url: string, options?: RequestInit) => Promise<any>; // Function passed from parent
 
   const dispatch = createEventDispatcher();
 
@@ -126,7 +125,6 @@
 
   function handleDelete(index: number) {
     if (confirm(`Are you sure you want to delete downloader #${index + 1}?`)) {
-      console.log("Delete downloader clicked for index:", index);
       // Create a new array without the deleted item
       const updatedDownloaders = downloaders.filter((_, i) => i !== index);
       // Notify the parent component of the change
@@ -230,8 +228,8 @@
     <button type="submit" style="display: none;" aria-hidden="true"></button>
   </form>
   <div slot="footer">
-    <button type="button" class="button secondary-button" on:click={() => (showDownloaderModal = false)}>Cancel</button>
     <button type="button" class="button primary-button" on:click={saveDownloader}>Save</button>
+    <button type="button" class="button secondary-button" on:click={() => (showDownloaderModal = false)}>Cancel</button>
   </div>
 </Modal>
 

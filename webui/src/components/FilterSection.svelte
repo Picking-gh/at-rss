@@ -120,8 +120,8 @@
     </div>
   </div>
   <div slot="footer">
-    <button type="button" class="button secondary-button" on:click={() => (showKeywordModal = false)}>Cancel</button>
     <button type="button" class="button primary-button" on:click={saveKeyword}>Save</button>
+    <button type="button" class="button secondary-button" on:click={() => (showKeywordModal = false)}>Cancel</button>
   </div>
 </Modal>
 
