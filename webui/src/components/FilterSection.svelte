@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
   import Modal from "./Modal.svelte";
   import ListItem from "./ListItem.svelte";
 
@@ -9,21 +8,21 @@
     exclude?: string[];
   }
 
-  export let filter: FilterConfig | null | undefined = null; // The filter configuration object
+  interface Props {
+    filter?: FilterConfig | null | undefined; // The filter configuration object
+    update?: any;
+  }
 
-  const dispatch = createEventDispatcher();
+  let { filter = null, update }: Props = $props();
 
   // --- Local State ---
   // Use derived state or direct binding if possible, but for complex objects, local copy might be easier
-  let internalFilter: FilterConfig = filter ? structuredClone(filter) : { include: [], exclude: [] };
-
-  // Update internal state when the prop changes
-  $: internalFilter = filter ? structuredClone(filter) : { include: [], exclude: [] };
+  let internalFilter: FilterConfig = $state(filter ? filter : { include: [], exclude: [] });
 
   // --- Modal State ---
-  let showKeywordModal = false;
-  let modalTitle = "";
-  let currentKeywordValue = "";
+  let showKeywordModal = $state(false);
+  let modalTitle = $state("");
+  let currentKeywordValue = $state("");
   let editingKeywordType: "include" | "exclude" | null = null;
   let editingKeywordIndex: number | null = null;
 
@@ -34,7 +33,7 @@
       include: internalFilter.include || [],
       exclude: internalFilter.exclude || [],
     };
-    dispatch("update:filter", updatedFilter);
+    update(updatedFilter);
   }
 
   function openAddKeywordModal(type: "include" | "exclude") {
@@ -90,7 +89,7 @@
     }
 
     notifyUpdate();
-    showKeywordModal = false; // Close modal
+    showKeywordModal = false;
   }
 
   function deleteKeyword(type: "include" | "exclude", index: number) {
@@ -101,34 +100,34 @@
   }
 
   function addFilterSection() {
-    dispatch("update:filter", { include: [], exclude: [] }); // Dispatch a new empty filter object
+    update({ include: [], exclude: [] });
   }
 
   function removeFilterSection() {
     if (confirm("Are you sure you want to remove the entire filter section?")) {
-      dispatch("update:filter", null); // Dispatch null to remove the filter
+      update(null);
     }
   }
 </script>
 
 <!-- Keyword Add/Edit Modal -->
-<Modal bind:showModal={showKeywordModal} title={modalTitle} on:close={() => (showKeywordModal = false)}>
-  <div slot="body">
+<Modal bind:showModal={showKeywordModal} title={modalTitle} close={() => (showKeywordModal = false)}>
+  {#snippet body()}
     <div class="form-group">
       <label for="keyword-input">Keyword</label>
       <input type="text" id="keyword-input" bind:value={currentKeywordValue} placeholder="Enter keyword" required class="modal-input" />
     </div>
-  </div>
-  <div slot="footer">
-    <button type="button" class="button primary-button" on:click={saveKeyword}>Save</button>
-    <button type="button" class="button secondary-button" on:click={() => (showKeywordModal = false)}>Cancel</button>
-  </div>
+  {/snippet}
+  {#snippet footer()}
+    <button type="button" class="button primary-button" onclick={saveKeyword}>Save</button>
+    <button type="button" class="button secondary-button" onclick={() => (showKeywordModal = false)}>Cancel</button>
+  {/snippet}
 </Modal>
 
 <div class="form-section">
   <h3>Filter</h3>
   {#if filter === null || filter === undefined}
-    <button type="button" class="button secondary-button" on:click={addFilterSection}> Add Filter Section </button>
+    <button type="button" class="button secondary-button" onclick={addFilterSection}> Add Filter Section </button>
   {:else}
     <!-- Include Keywords List -->
     <div class="form-subsection">
@@ -136,13 +135,7 @@
       {#if internalFilter.include && internalFilter.include.length > 0}
         <ul class="list-items keyword-list">
           {#each internalFilter.include as keyword, index (index)}
-            <ListItem
-              item={keyword}
-              index={index}
-              draggable={false}
-              on:edit={() => openEditKeywordModal("include", index)}
-              on:delete={() => deleteKeyword("include", index)}
-            >
+            <ListItem item={keyword} {index} draggable={false} edit={() => openEditKeywordModal("include", index)} del={() => deleteKeyword("include", index)}>
               {keyword}
             </ListItem>
           {/each}
@@ -150,7 +143,7 @@
       {:else}
         <p class="empty-list-message">No include keywords.</p>
       {/if}
-      <button type="button" class="button secondary-button add-item-button" on:click={() => openAddKeywordModal("include")}> Add Include Keyword </button>
+      <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal("include")}> Add Include Keyword </button>
     </div>
 
     <!-- Exclude Keywords List -->
@@ -159,13 +152,7 @@
       {#if internalFilter.exclude && internalFilter.exclude.length > 0}
         <ul class="list-items keyword-list">
           {#each internalFilter.exclude as keyword, index (index)}
-            <ListItem
-              item={keyword}
-              index={index}
-              draggable={false}
-              on:edit={() => openEditKeywordModal("exclude", index)}
-              on:delete={() => deleteKeyword("exclude", index)}
-            >
+            <ListItem item={keyword} {index} draggable={false} edit={() => openEditKeywordModal("exclude", index)} del={() => deleteKeyword("exclude", index)}>
               {keyword}
             </ListItem>
           {/each}
@@ -173,12 +160,12 @@
       {:else}
         <p class="empty-list-message">No exclude keywords.</p>
       {/if}
-      <button type="button" class="button secondary-button add-item-button" on:click={() => openAddKeywordModal("exclude")}> Add Exclude Keyword </button>
+      <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal("exclude")}> Add Exclude Keyword </button>
     </div>
 
     <!-- Remove Section Button -->
     <div class="section-actions">
-      <button type="button" class="button danger-button" on:click={removeFilterSection}> Remove Filter Section </button>
+      <button type="button" class="button danger-button" onclick={removeFilterSection}> Remove Filter Section </button>
     </div>
   {/if}
 </div>

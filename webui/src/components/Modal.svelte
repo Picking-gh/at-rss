@@ -1,13 +1,18 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
-  export let showModal: boolean = false;
-  export let title: string = "Modal Title";
+  interface Props {
+    showModal?: boolean;
+    title?: string;
+    close?: any;
+    body?: import("svelte").Snippet;
+    footer?: import("svelte").Snippet;
+  }
 
-  const dispatch = createEventDispatcher();
+  let { showModal = $bindable(false), title = "Modal Title", close, body, footer }: Props = $props();
 
   function closeModal() {
-    dispatch("close");
+    close();
   }
 
   // Handle Escape key press
@@ -27,19 +32,19 @@
 </script>
 
 {#if showModal}
-  <div class="modal-backdrop" on:click={closeModal} role="presentation">
-    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-title" on:click|stopPropagation>
+  <div class="modal-backdrop" role="presentation">
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <header class="modal-header">
         <h2 id="modal-title">{title}</h2>
-        <button class="close-button" on:click={closeModal} aria-label="Close modal">&times;</button>
+        <button class="close-button" onclick={closeModal} aria-label="Close modal">&times;</button>
       </header>
       <section class="modal-body">
-        <slot name="body"></slot>
         <!-- Content goes here -->
+        {@render body?.()}
       </section>
       <footer class="modal-footer">
-        <slot name="footer"></slot>
         <!-- footer buttons go here -->
+        {@render footer?.()}
       </footer>
     </div>
   </div>

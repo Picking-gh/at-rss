@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
   import Modal from "./Modal.svelte";
 
   // Define the structure for a downloader configuration
@@ -15,15 +14,17 @@
     autoCleanUp?: boolean;
   }
 
-  export let downloaders: DownloaderConfig[] = []; // Use the interface
-
-  const dispatch = createEventDispatcher();
-
   import ListItem from "./ListItem.svelte";
+  interface Props {
+    downloaders?: DownloaderConfig[]; // Use the interface
+    update?: any;
+  }
+
+  let { downloaders = [], update }: Props = $props();
 
   // --- Modal State ---
-  let showDownloaderModal = false;
-  let modalTitle = "";
+  let showDownloaderModal = $state(false);
+  let modalTitle = $state("");
   // Define a default structure using the interface
   const defaultDownloader: DownloaderConfig = {
     type: "aria2c",
@@ -36,12 +37,12 @@
     useHttps: false,
     autoCleanUp: false,
   };
-  let currentDownloaderData: DownloaderConfig = { ...defaultDownloader }; // Use the interface
+  let currentDownloaderData: DownloaderConfig = $state({ ...defaultDownloader }); // Use the interface
   let editingDownloaderIndex: number | null = null;
 
   // --- Drag and Drop State ---
-  let dragStartIndex: number | null = null;
-  let dragOverIndex: number | null = null;
+  let dragStartIndex: number | null = $state(null);
+  let dragOverIndex: number | null = $state(null);
 
   // --- Helper Functions ---
   function getRpcUrl(downloader: any): string {
@@ -73,14 +74,15 @@
   function openEditModal(index: number) {
     modalTitle = "Edit Downloader";
     // Make a deep copy to avoid modifying the original array directly during editing
-    currentDownloaderData = structuredClone(downloaders[index]);
+    currentDownloaderData = downloaders[index];
     // Ensure all potential fields exist, even if undefined in original data
     currentDownloaderData = { ...defaultDownloader, ...currentDownloaderData };
     editingDownloaderIndex = index;
     showDownloaderModal = true;
   }
 
-  function saveDownloader() {
+  function saveDownloader(event: { preventDefault: () => void }) {
+    event.preventDefault();
     // Basic validation (can be expanded)
     if (!currentDownloaderData.type) {
       alert("Downloader type is required.");
@@ -119,7 +121,7 @@
       // Adding new
       updatedDownloaders = [...downloaders, dataToSave];
     }
-    dispatch("update:downloaders", updatedDownloaders);
+    update(updatedDownloaders);
     showDownloaderModal = false;
   }
 
@@ -128,25 +130,25 @@
       // Create a new array without the deleted item
       const updatedDownloaders = downloaders.filter((_, i) => i !== index);
       // Notify the parent component of the change
-      dispatch("update:downloaders", updatedDownloaders);
+      update(updatedDownloaders);
     }
   }
 
   // --- Drag and Drop Handlers ---
-  function handleDragStart(event: CustomEvent) {
-    dragStartIndex = event.detail.index;
+  function handleDragStart(index: number) {
+    dragStartIndex = index;
   }
 
-  function handleDragOver(event: CustomEvent) {
-    dragOverIndex = event.detail.index;
+  function handleDragOver(index: number) {
+    dragOverIndex = index;
   }
 
   function handleDragLeave() {
     dragOverIndex = null;
   }
 
-  function handleDrop(event: CustomEvent) {
-    const dropIndex = event.detail.index;
+  function handleDrop(index: number) {
+    const dropIndex = index;
 
     if (dragStartIndex === null || dragStartIndex === dropIndex) {
       dragStartIndex = null;
@@ -157,7 +159,7 @@
     const remainingItems = downloaders.filter((_, i) => i !== dragStartIndex);
     const reorderedDownloaders = [...remainingItems.slice(0, dropIndex), draggedItem, ...remainingItems.slice(dropIndex)];
 
-    dispatch("update:downloaders", reorderedDownloaders);
+    update(reorderedDownloaders);
     dragStartIndex = null;
   }
 
@@ -168,69 +170,73 @@
 </script>
 
 <!-- Downloader Add/Edit Modal -->
-<Modal bind:showModal={showDownloaderModal} title={modalTitle} on:close={() => (showDownloaderModal = false)}>
-  <form slot="body" class="modal-form" on:submit|preventDefault={saveDownloader}>
-    <div class="form-group">
-      <label for="downloader-type">Type</label>
-      <select id="downloader-type" bind:value={currentDownloaderData.type} required>
-        <option value="aria2c">Aria2c</option>
-        <option value="transmission">Transmission</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="downloader-host">Host (Optional)</label>
-      <input type="text" id="downloader-host" bind:value={currentDownloaderData.host} placeholder="e.g., localhost or 192.168.1.10" required />
-    </div>
-    <div class="form-group">
-      <label for="downloader-port">Port (Optional)</label>
-      <input
-        type="number"
-        id="downloader-port"
-        bind:value={currentDownloaderData.port}
-        placeholder={currentDownloaderData.type === "aria2c" ? "e.g., 6800" : "e.g., 9091"}
-        min="1"
-        max="65535"
-      />
-    </div>
-    <div class="form-group">
-      <label for="downloader-rpcPath">RPC Path (Optional)</label>
-      <input
-        type="text"
-        id="downloader-rpcPath"
-        bind:value={currentDownloaderData.rpcPath}
-        placeholder={currentDownloaderData.type === "aria2c" ? "e.g., /jsonrpc" : "e.g., /transmission/rpc"}
-      />
-    </div>
-    {#if currentDownloaderData.type === "aria2c"}
+<Modal bind:showModal={showDownloaderModal} title={modalTitle} close={() => (showDownloaderModal = false)}>
+  {#snippet body()}
+    <form class="modal-form" onsubmit={saveDownloader}>
       <div class="form-group">
-        <label for="downloader-token">Token (Optional)</label>
-        <input type="text" id="downloader-token" bind:value={currentDownloaderData.token} placeholder="Aria2c RPC secret token" />
-      </div>
-    {:else}
-      <div class="form-group">
-        <label for="downloader-username">Username (Optional)</label>
-        <input type="text" id="downloader-username" bind:value={currentDownloaderData.username} />
+        <label for="downloader-type">Type</label>
+        <select id="downloader-type" bind:value={currentDownloaderData.type} required>
+          <option value="aria2c">Aria2c</option>
+          <option value="transmission">Transmission</option>
+        </select>
       </div>
       <div class="form-group">
-        <label for="downloader-password">Password (Optional)</label>
-        <input type="password" id="downloader-password" bind:value={currentDownloaderData.password} />
+        <label for="downloader-host">Host (Optional)</label>
+        <input type="text" id="downloader-host" bind:value={currentDownloaderData.host} placeholder="e.g., localhost or 192.168.1.10" required />
       </div>
-    {/if}
-    <div class="form-group checkbox-group">
-      <input type="checkbox" id="downloader-useHttps" bind:checked={currentDownloaderData.useHttps} />
-      <label for="downloader-useHttps">Use HTTPS</label>
+      <div class="form-group">
+        <label for="downloader-port">Port (Optional)</label>
+        <input
+          type="number"
+          id="downloader-port"
+          bind:value={currentDownloaderData.port}
+          placeholder={currentDownloaderData.type === "aria2c" ? "e.g., 6800" : "e.g., 9091"}
+          min="1"
+          max="65535"
+        />
+      </div>
+      <div class="form-group">
+        <label for="downloader-rpcPath">RPC Path (Optional)</label>
+        <input
+          type="text"
+          id="downloader-rpcPath"
+          bind:value={currentDownloaderData.rpcPath}
+          placeholder={currentDownloaderData.type === "aria2c" ? "e.g., /jsonrpc" : "e.g., /transmission/rpc"}
+        />
+      </div>
+      {#if currentDownloaderData.type === "aria2c"}
+        <div class="form-group">
+          <label for="downloader-token">Token (Optional)</label>
+          <input type="text" id="downloader-token" bind:value={currentDownloaderData.token} placeholder="Aria2c RPC secret token" />
+        </div>
+      {:else}
+        <div class="form-group">
+          <label for="downloader-username">Username (Optional)</label>
+          <input type="text" id="downloader-username" bind:value={currentDownloaderData.username} />
+        </div>
+        <div class="form-group">
+          <label for="downloader-password">Password (Optional)</label>
+          <input type="password" id="downloader-password" bind:value={currentDownloaderData.password} />
+        </div>
+      {/if}
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="downloader-useHttps" bind:checked={currentDownloaderData.useHttps} />
+        <label for="downloader-useHttps">Use HTTPS</label>
+      </div>
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="downloader-autoCleanUp" bind:checked={currentDownloaderData.autoCleanUp} />
+        <label for="downloader-autoCleanUp">Auto CleanUp</label>
+      </div>
+      <!-- Hidden submit button to allow Enter key submission -->
+      <button type="submit" style="display: none;" aria-hidden="true"></button>
+    </form>
+  {/snippet}
+  {#snippet footer()}
+    <div>
+      <button type="button" class="button primary-button" onclick={saveDownloader}>Save</button>
+      <button type="button" class="button secondary-button" onclick={() => (showDownloaderModal = false)}>Cancel</button>
     </div>
-    <div class="form-group checkbox-group">
-      <input type="checkbox" id="downloader-autoCleanUp" bind:checked={currentDownloaderData.autoCleanUp} />
-      <label for="downloader-autoCleanUp">Auto CleanUp</label>
-    </div>
-    <!-- Hidden submit button to allow Enter key submission -->
-    <button type="submit" style="display: none;" aria-hidden="true"></button>
-  </form>
-  <div slot="footer">
-    <button type="button" class="button primary-button" on:click={saveDownloader}>Save</button>
-    <button type="button" class="button secondary-button" on:click={() => (showDownloaderModal = false)}>Cancel</button>
-  </div>
+  {/snippet}
 </Modal>
 
 <div class="form-section">
@@ -243,15 +249,14 @@
             item={downloader}
             {index}
             draggable={true}
-            bind:dragStartIndex
-            bind:dragOverIndex
-            on:dragstart={handleDragStart}
-            on:dragover={handleDragOver}
-            on:dragleave={handleDragLeave}
-            on:drop={handleDrop}
-            on:dragend={handleDragEnd}
-            on:edit={() => openEditModal(index)}
-            on:delete={() => handleDelete(index)}
+            isDraggedOver={dragOverIndex === index && dragStartIndex !== index}
+            dragStart={handleDragStart}
+            dragOver={handleDragOver}
+            dragLeave={handleDragLeave}
+            drop={handleDrop}
+            dragEnd={handleDragEnd}
+            edit={() => openEditModal(index)}
+            del={() => handleDelete(index)}
           >
             <strong>Type:</strong>
             {downloader.type} | <strong>RPC URL:</strong>
@@ -263,6 +268,6 @@
       <p class="empty-list-message">No downloaders configured.</p>
     {/if}
 
-    <button type="button" class="button secondary-button add-item-button" on:click={openAddModal}> Add Downloader </button>
+    <button type="button" class="button secondary-button add-item-button" onclick={openAddModal}> Add Downloader </button>
   </div>
 </div>

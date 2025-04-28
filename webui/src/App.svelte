@@ -4,13 +4,13 @@
   import TaskDetail from "./components/TaskDetail.svelte";
 
   // --- State ---
-  let tasks: { [key: string]: any } = {}; // Store fetched tasks {name: config}
-  let selectedTaskName: string | null = null;
-  let isAddingTask = false; // Flag for adding a new task
-  let isLoading = true;
-  let showNameInputModal = false;
-  let newTaskName = "";
-  let nameInputError = "";
+  let tasks: { [key: string]: any } = $state({}); // Store fetched tasks {name: config}
+  let selectedTaskName: string | null = $state(null);
+  let isAddingTask = $state(false); // Flag for adding a new task
+  let isLoading = $state(true);
+  let showNameInputModal = $state(false);
+  let newTaskName = $state("");
+  let nameInputError = $state("");
 
   // --- API Helper ---
   async function apiFetch(url: string, options: RequestInit = {}) {
@@ -86,7 +86,7 @@
 
     // Create new task config with isNew flag
     tasks[newTaskName] = {
-      interval: 10,
+      interval: null,
       downloaders: [],
       feeds: [],
       filter: null,
@@ -100,15 +100,15 @@
   }
 
   // --- Event Handlers from TaskDetail ---
-  function handleTaskSaved(event: CustomEvent) {
-    const { taskName } = event.detail;
+  function handleTaskSaved(event: { taskName: string }) {
+    const { taskName } = event;
     if (tasks[taskName]) {
       tasks[taskName].isModified = false;
     }
   }
 
-  function handleTaskDeleted(event: CustomEvent) {
-    const { taskName } = event.detail;
+  function handleTaskDeleted(event: { taskName: string }) {
+    const { taskName } = event;
     if (tasks[taskName]) {
       selectedTaskName = null;
       delete tasks[taskName];
@@ -116,8 +116,8 @@
     }
   }
 
-  function handleNewTaskCreated(event: CustomEvent) {
-    const { taskName } = event.detail;
+  function handleNewTaskCreated(event: { taskName: string }) {
+    const { taskName } = event;
     if (tasks[taskName]) {
       isAddingTask = false;
       tasks[taskName].isNew = false;
@@ -125,8 +125,8 @@
     }
   }
 
-  function handleNewTaskCanceled(event: CustomEvent) {
-    const { taskName } = event.detail;
+  function handleNewTaskCanceled(event: { taskName: string }) {
+    const { taskName } = event;
     if (tasks[taskName]) {
       selectedTaskName = null;
       isAddingTask = false;
@@ -135,8 +135,8 @@
     }
   }
 
-  function handleTaskModified(event: CustomEvent) {
-    const { taskName, taskConfig, isModified } = event.detail;
+  function handleTaskModified(event: { taskName: string; taskConfig: any; isModified: boolean }) {
+    const { taskName, taskConfig, isModified } = event;
     if (tasks[taskName]) {
       tasks[taskName] = taskConfig;
       tasks[taskName].isModified = isModified;
@@ -149,8 +149,8 @@
 
 <main class="app-container main-layout">
   <!-- Task Name Input Modal -->
-  <Modal showModal={showNameInputModal} title="New Task" on:close={() => (showNameInputModal = false)}>
-    <div slot="body">
+  <Modal showModal={showNameInputModal} title="New Task" close={() => (showNameInputModal = false)}>
+    {#snippet body()}
       <div class="form-group">
         <label for="task-name-input">Task Name</label>
         <input id="task-name-input" type="text" bind:value={newTaskName} class:error={nameInputError} placeholder="Input a task name" />
@@ -158,11 +158,11 @@
           <p class="error-message">{nameInputError}</p>
         {/if}
       </div>
-    </div>
-    <div slot="footer">
-      <button type="button" class="button primary-button" on:click={handleTaskNameSubmit}>OK</button>
-      <button type="button" class="button secondary-button" on:click={() => (showNameInputModal = false)}>Cancel</button>
-    </div>
+    {/snippet}
+    {#snippet footer()}
+      <button type="button" class="button primary-button" onclick={handleTaskNameSubmit}>OK</button>
+      <button type="button" class="button secondary-button" onclick={() => (showNameInputModal = false)}>Cancel</button>
+    {/snippet}
   </Modal>
   <aside class="sidebar task-list-panel">
     <h2>Tasks</h2>
@@ -177,14 +177,14 @@
               class:active={taskName === selectedTaskName}
               class:new-task={tasks[taskName]?.isNew}
               class:modified-task={tasks[taskName]?.isModified && !tasks[taskName]?.isNew}
-              on:click={() => selectTask(taskName)}
+              onclick={() => selectTask(taskName)}
             >
               {taskName}
             </button>
           </li>
         {/each}
         <li class="add-task-item">
-          <button id="add-task-btn" class="button task-button add-button" on:click={() => showNewTaskForm()}> + </button>
+          <button id="add-task-btn" class="button task-button add-button" onclick={() => showNewTaskForm()}> + </button>
         </li>
       </ul>
     {/if}
@@ -198,9 +198,9 @@
         taskName={newTaskName}
         taskConfig={tasks[newTaskName]}
         {apiFetch}
-        on:taskSaved={handleNewTaskCreated}
-        on:cancelAdd={handleNewTaskCanceled}
-        on:update:modified={handleTaskModified}
+        taskSaved={handleNewTaskCreated}
+        taskAddCanceled={handleNewTaskCanceled}
+        taskModified={handleTaskModified}
       />
     {:else if selectedTaskName && tasks[selectedTaskName]}
       <TaskDetail
@@ -208,9 +208,9 @@
         taskName={selectedTaskName}
         taskConfig={tasks[selectedTaskName]}
         {apiFetch}
-        on:taskSaved={handleTaskSaved}
-        on:taskDeleted={handleTaskDeleted}
-        on:update:modified={handleTaskModified}
+        taskSaved={handleTaskSaved}
+        taskDeleted={handleTaskDeleted}
+        taskModified={handleTaskModified}
       />
     {:else if selectedTaskName}
       <p>Loading task details for {selectedTaskName}... or task data missing.</p>

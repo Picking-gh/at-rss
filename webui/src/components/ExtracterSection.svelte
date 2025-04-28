@@ -1,35 +1,36 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-
   // Define the structure for the extracter object
   interface ExtracterConfig {
     tag?: "title" | "link" | "description" | "enclosure" | "guid";
     pattern?: string;
   }
 
-  export let extracter: ExtracterConfig | null | undefined = null; // The extracter configuration object
+  interface Props {
+    extracter?: ExtracterConfig | null | undefined; // The extracter configuration object
+    update?: any;
+  }
 
-  const dispatch = createEventDispatcher();
+  let { extracter = null, update }: Props = $props();
 
   // --- Local State ---
-  let internalExtracter: ExtracterConfig = extracter ? structuredClone(extracter) : {};
+  let internalExtracter: ExtracterConfig = $state(extracter ? extracter : {});
 
-  // Update internal state when the prop changes
-  // $: internalExtracter = extracter ? structuredClone(extracter) : {};
+  $effect(() => {
+    internalExtracter = extracter ? extracter : {};
+  });
 
   // --- Event Handlers ---
   function handleInputChange() {
-    // Dispatch the entire internal object on any change
-    dispatch("update:extracter", { ...internalExtracter });
+    update({ ...internalExtracter });
   }
 
   function addExtracterSection() {
-    dispatch("update:extracter", { tag: "link", pattern: "" }); // Dispatch a new empty object
+    update({ tag: "link", pattern: "" });
   }
 
   function removeExtracterSection() {
     if (confirm("Are you sure you want to remove the entire extracter section?")) {
-      dispatch("update:extracter", null); // Dispatch null to remove
+      update(null);
     }
   }
 </script>
@@ -37,11 +38,11 @@
 <div class="form-section">
   <h3>Extracter (CSS Selectors)</h3>
   {#if extracter === null || extracter === undefined}
-    <button type="button" class="button secondary-button" on:click={addExtracterSection}> Add Extracter Section </button>
+    <button type="button" class="button secondary-button" onclick={addExtracterSection}> Add Extracter Section </button>
   {:else}
     <div class="form-group">
       <label for="extracter-tag">Tag</label>
-      <select id="extracter-tag" bind:value={internalExtracter.tag} required on:input={handleInputChange}>
+      <select id="extracter-tag" bind:value={internalExtracter.tag} required oninput={handleInputChange}>
         <option value="title">title</option>
         <option value="link">link</option>
         <option value="description">description</option>
@@ -58,14 +59,13 @@
         id="extracter-pattern"
         bind:value={internalExtracter.pattern}
         placeholder="e.g., (?:[2-7A-Z]&#123;32&#125;|[0-9a-f]&#123;40&#125;)"
-        on:input={handleInputChange}
+        oninput={handleInputChange}
       />
     </div>
 
     <!-- Remove Section Button -->
     <div class="section-actions">
-      <button type="button" class="button danger-button" on:click={removeExtracterSection}> Remove Extracter Section </button>
+      <button type="button" class="button danger-button" onclick={removeExtracterSection}> Remove Extracter Section </button>
     </div>
   {/if}
 </div>
-

@@ -1,21 +1,23 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
   import Modal from "./Modal.svelte";
   import ListItem from "./ListItem.svelte";
 
-  export let feeds: string[] = []; // Array of feed URLs
+  interface Props {
+    feeds?: string[]; // Array of feed URLs
+    update?: any;
+  }
 
-  const dispatch = createEventDispatcher();
+  let { feeds = [], update }: Props = $props();
 
   // --- Modal State ---
-  let showFeedModal = false;
-  let modalTitle = "";
-  let currentFeedValue = "";
+  let showFeedModal = $state(false);
+  let modalTitle = $state("");
+  let currentFeedValue = $state("");
   let editingFeedIndex: number | null = null;
 
   // --- Drag and Drop State ---
-  let dragStartIndex: number | null = null;
-  let dragOverIndex: number | null = null;
+  let dragStartIndex: number | null = $state(null);
+  let dragOverIndex: number | null = $state(null);
 
   // --- Event Handlers ---
   function openAddModal() {
@@ -56,34 +58,33 @@
       }
       updatedFeeds = [...feeds, feedValue];
     }
-    dispatch("update:feeds", updatedFeeds);
-    showFeedModal = false; // Close modal after saving
+    update(updatedFeeds);
+    showFeedModal = false;
   }
 
   function handleDelete(index: number) {
     if (confirm(`Are you sure you want to delete feed "${feeds[index]}"?`)) {
-      console.log("Delete feed clicked for index:", index);
       const updatedFeeds = feeds.filter((_, i) => i !== index);
-      dispatch("update:feeds", updatedFeeds);
+      update(updatedFeeds);
     }
   }
 
   // --- Drag and Drop Handlers ---
-  function handleDragStart(event: CustomEvent) {
-    dragStartIndex = event.detail.index;
+  function handleDragStart(index: number) {
+    dragStartIndex = index;
   }
 
-  function handleDragOver(event: CustomEvent) {
-    dragOverIndex = event.detail.index;
+  function handleDragOver(index: number) {
+    dragOverIndex = index;
   }
 
   function handleDragLeave() {
     dragOverIndex = null;
   }
 
-  function handleDrop(event: CustomEvent) {
-    const dropIndex = event.detail.index;
-    
+  function handleDrop(index: number) {
+    const dropIndex = index;
+
     if (dragStartIndex === null || dragStartIndex === dropIndex) {
       dragStartIndex = null;
       return;
@@ -93,7 +94,7 @@
     const remainingItems = feeds.filter((_, i) => i !== dragStartIndex);
     const reorderedFeeds = [...remainingItems.slice(0, dropIndex), draggedItem, ...remainingItems.slice(dropIndex)];
 
-    dispatch("update:feeds", reorderedFeeds);
+    update(reorderedFeeds);
     dragStartIndex = null;
   }
 
@@ -104,17 +105,17 @@
 </script>
 
 <!-- Feed Add/Edit Modal -->
-<Modal bind:showModal={showFeedModal} title={modalTitle} on:close={() => (showFeedModal = false)}>
-  <div slot="body">
+<Modal bind:showModal={showFeedModal} title={modalTitle} close={() => (showFeedModal = false)}>
+  {#snippet body()}
     <div class="form-group">
       <label for="feed-url-input">Feed URL</label>
       <input type="url" id="feed-url-input" bind:value={currentFeedValue} placeholder="https://example.com/rss.xml" required class="modal-input" />
     </div>
-  </div>
-  <div slot="footer">
-    <button type="button" class="button primary-button" on:click={saveFeed}>Save</button>
-    <button type="button" class="button secondary-button" on:click={() => (showFeedModal = false)}>Cancel</button>
-  </div>
+  {/snippet}
+  {#snippet footer()}
+    <button type="button" class="button primary-button" onclick={saveFeed}>Save</button>
+    <button type="button" class="button secondary-button" onclick={() => (showFeedModal = false)}>Cancel</button>
+  {/snippet}
 </Modal>
 
 <div class="form-section">
@@ -125,17 +126,16 @@
         {#each feeds as feed, index (index)}
           <ListItem
             item={feed}
-            index={index}
+            {index}
             draggable={true}
-            bind:dragStartIndex
-            bind:dragOverIndex
-            on:dragstart={handleDragStart}
-            on:dragover={handleDragOver}
-            on:dragleave={handleDragLeave}
-            on:drop={handleDrop}
-            on:dragend={handleDragEnd}
-            on:edit={() => openEditModal(index)}
-            on:delete={() => handleDelete(index)}
+            isDraggedOver={dragOverIndex === index && dragStartIndex !== index}
+            dragStart={handleDragStart}
+            dragOver={handleDragOver}
+            dragLeave={handleDragLeave}
+            drop={handleDrop}
+            dragEnd={handleDragEnd}
+            edit={() => openEditModal(index)}
+            del={() => handleDelete(index)}
           >
             {feed}
           </ListItem>
@@ -145,6 +145,6 @@
       <p class="empty-list-message">No feeds configured.</p>
     {/if}
 
-    <button type="button" class="button secondary-button add-item-button" on:click={openAddModal}> Add Feed </button>
+    <button type="button" class="button secondary-button add-item-button" onclick={openAddModal}> Add Feed </button>
   </div>
 </div>

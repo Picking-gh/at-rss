@@ -1,13 +1,20 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  interface Props {
+    item: any;
+    index: number;
+    draggable?: boolean;
+    isDraggedOver?: boolean;
+    dragStart?: any;
+    dragEnd?: any;
+    dragOver?: any;
+    dragLeave?: any;
+    drop?: any;
+    edit?: any;
+    del?: any;
+    children?: import("svelte").Snippet;
+  }
 
-  export let item: any;
-  export let index: number;
-  export let draggable = false;
-  export let dragStartIndex: number | null = null;
-  export let dragOverIndex: number | null = null;
-
-  const dispatch = createEventDispatcher();
+  let { item, index, draggable = false, isDraggedOver = false, dragStart, dragEnd, dragOver, dragLeave, drop, edit, del, children }: Props = $props();
 
   // Shared SVG Icons
   export const EDIT_ICON_SVG = `
@@ -26,7 +33,7 @@
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", index.toString());
-      dispatch("dragstart", { index });
+      dragStart(index);
       (event.target as HTMLElement).classList.add("dragging");
     }
   }
@@ -36,30 +43,30 @@
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = "move";
     }
-    dispatch("dragover", { index });
+    dragOver(index);
   }
 
   function handleDragLeave(event: DragEvent) {
-    dispatch("dragleave", { index });
+    dragLeave(index);
   }
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
-    dispatch("drop", { index });
+    drop(index);
   }
 
   function handleDragEnd(event: DragEvent) {
     (event.target as HTMLElement).classList.remove("dragging");
-    dispatch("dragend");
+    dragEnd();
   }
 
   // Action Handlers
   function handleEdit() {
-    dispatch("edit", { index });
+    edit(index);
   }
 
   function handleDelete() {
-    dispatch("delete", { index });
+    del(index);
   }
 </script>
 
@@ -67,25 +74,25 @@
   class="list-item {draggable ? 'draggable-item' : ''}"
   data-index={index}
   {draggable}
-  on:dragstart={handleDragStart}
-  on:dragover={handleDragOver}
-  on:dragleave={handleDragLeave}
-  on:drop={handleDrop}
-  on:dragend={handleDragEnd}
-  class:drag-over={draggable && dragOverIndex === index && dragStartIndex !== index}
+  ondragstart={handleDragStart}
+  ondragover={handleDragOver}
+  ondragleave={handleDragLeave}
+  ondrop={handleDrop}
+  ondragend={handleDragEnd}
+  class:drag-over={draggable && isDraggedOver}
 >
   <span class="item-content">
     {#if draggable}
       <span class="drag-handle">::</span>
     {/if}
-    <slot>{item}</slot>
+    {#if children}{@render children()}{:else}{item}{/if}
   </span>
 
   <div class="list-item-actions">
-    <button type="button" class="button icon-button secondary-button" on:click={handleEdit} title="Edit">
+    <button type="button" class="button icon-button secondary-button" onclick={handleEdit} title="Edit">
       {@html EDIT_ICON_SVG}
     </button>
-    <button type="button" class="button icon-button danger-button" on:click={handleDelete} title="Delete">
+    <button type="button" class="button icon-button danger-button" onclick={handleDelete} title="Delete">
       {@html DELETE_ICON_SVG}
     </button>
   </div>
