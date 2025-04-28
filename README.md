@@ -36,11 +36,12 @@ Create `at-rss.conf` in YAML format:
 ```yaml
 # Example configuration
 my_feed:
-  downloader:
+  downloaders:
   - type: aria2c
     token: "your_token"
     autoCleanUp: true
-  feed: "https://example.com/rss"
+  feeds:
+  - "https://example.com/rss"
   filter:
     include: ["1080p", "x264"]
     exclude: ["camrip", "tc"]
@@ -65,8 +66,8 @@ Or run as a systemd service (see at-rss.service for example).
 
 | Key          | Required | Description                          |
 |--------------|----------|--------------------------------------|
-| downloader   | Yes      | Download client configuration        |
-| feed         | Yes      | List of RSS feed URLs                |
+| downloaders  | Yes      | Download client configurations       |
+| feeds        | Yes      | List of RSS feed URLs                |
 | filter.include | No     | Keywords to include                  |
 | filter.exclude | No     | Keywords to exclude                  |
 | interval     | No       | Polling interval in minutes (default: 10) |
