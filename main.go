@@ -8,10 +8,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http" // Added for web server
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -31,6 +33,9 @@ type options struct {
 var opt options
 var parser = flags.NewParser(&opt, flags.Default)
 var webServer *http.Server // Global variable to hold the server instance
+
+// Global download status cache
+var downloadStatusCache sync.Map
 
 func main() {
 	if _, err := parser.Parse(); err != nil {
@@ -91,13 +96,73 @@ func main() {
 	// --- Start Web Server (if configured) ---
 	var errWeb error
 	if opt.WebListenAddress != "" {
+		// Initialize downloaders from config
+		downloaders := make(map[string]RpcClient)
+		taskConfigs, err := LoadYAMLConfig(opt.Config)
+		if err == nil {
+			for taskName, taskConfig := range taskConfigs {
+				for i, dlConfig := range taskConfig.Downloaders {
+					// Create unique name for each downloader instance
+					dlName := fmt.Sprintf("%s-downloader-%d", taskName, i)
+
+					switch strings.ToLower(dlConfig.Type) {
+					case "aria2c":
+						downloaders[dlName] = &Aria2c{
+							rpcURL: fmt.Sprintf("%s://%s:%d%s",
+								map[bool]string{true: "https", false: "http"}[dlConfig.UseHttps],
+								dlConfig.Host,
+								dlConfig.Port,
+								dlConfig.RpcPath),
+							rpcToken: dlConfig.Token,
+						}
+					case "transmission":
+						downloaders[dlName] = &Transmission{
+							rpcURL: fmt.Sprintf("%s://%s:%d%s",
+								map[bool]string{true: "https", false: "http"}[dlConfig.UseHttps],
+								dlConfig.Host,
+								dlConfig.Port,
+								dlConfig.RpcPath),
+							user:     dlConfig.Username,
+							password: dlConfig.Password,
+						}
+					}
+				}
+			}
+		} else {
+			slog.Error("Failed to load config for downloader initialization", "error", err)
+		}
+
 		// Pass the actual config path and token being used
-		webServer, errWeb = StartWebServer(opt.WebListenAddress, opt.WebUIDir, opt.Config, opt.Token)
+		webServer, errWeb = StartWebServer(opt.WebListenAddress, opt.WebUIDir, opt.Config, downloaders, opt.Token)
 		if errWeb != nil {
 			slog.Error("Failed to start web server", "error", errWeb)
 			// Decide if this is fatal. For now, let's log and continue without web UI.
 			// return
 		}
+
+		// Start periodic download status updates
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					// Update download status for all downloaders
+					for name, client := range downloaders {
+						statuses, err := client.GetActiveDownloads()
+						if err != nil {
+							slog.Error("Failed to get downloads from downloader",
+								"name", name, "error", err)
+							continue
+						}
+						downloadStatusCache.Store(name, statuses)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 	} else {
 		slog.Info("Web server is disabled (web-listen address not provided).")
 	}

@@ -34,11 +34,22 @@ type Task struct {
 	ctx           context.Context
 }
 
+// DownloadStatus represents the status of a download item
+type DownloadStatus struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Status      string  `json:"status"` // "downloading", "seeding", "stopped", "error"
+	IsFinished  bool    `json:"isFinished"`
+	PercentDone float64 `json:"percentDone"`
+	Downloader  string  `json:"downloader"` // "aria2c" or "transmission"
+}
+
 // RpcClient is the interface for both aria2c and transmission rpc clients.
 type RpcClient interface {
 	AddTorrent(uri string) error
 	CleanUp()
 	CloseRpc()
+	GetActiveDownloads() ([]DownloadStatus, error) // New method to get download status
 }
 
 // Start begins executing the task at regular intervals defined by FetchInterval.

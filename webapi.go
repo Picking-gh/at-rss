@@ -11,7 +11,58 @@ import (
 	"strings"
 )
 
+// --- Data Structures ---
+
+// DownloaderGroup represents a group of downloads from the same downloader
+type DownloaderGroup struct {
+	Name      string           `json:"name"`
+	Type      string           `json:"type"`
+	Downloads []DownloadStatus `json:"downloads"`
+}
+
 // --- HTTP Handler Factories ---
+
+// handleDownloads creates a handler function for the /api/downloads endpoint
+func handleDownloads(downloaders map[string]RpcClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Group downloads by downloader from cache
+		groups := make(map[string]*DownloaderGroup)
+		downloadStatusCache.Range(func(key, value interface{}) bool {
+			name := key.(string)
+			statuses := value.([]DownloadStatus)
+
+			// Determine downloader type from name (format: "taskName-downloader-N")
+			parts := strings.Split(name, "-")
+			downloaderType := ""
+			if len(parts) >= 3 {
+				downloaderType = parts[len(parts)-2] // "downloader" in name
+			}
+
+			groups[name] = &DownloaderGroup{
+				Name:      name,
+				Type:      downloaderType,
+				Downloads: statuses,
+			}
+			return true
+		})
+
+		// Convert map to slice for response
+		var result []DownloaderGroup
+		for _, group := range groups {
+			result = append(result, *group)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			slog.Error("Failed to encode downloads response", "error", err)
+		}
+	}
+}
 
 // handleTasks creates a handler function for the /api/tasks endpoint.
 func handleTasks(cfgPath string) http.HandlerFunc {
@@ -270,9 +321,9 @@ func authMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
 }
 
 // StartWebServer initializes and starts the HTTP server for the API and static UI files.
-// It accepts the listen address, UI directory path, config file path and optional token.
+// It accepts the listen address, UI directory path, config file path, downloaders map and optional token.
 // Returns the http.Server instance for graceful shutdown and any error during setup.
-func StartWebServer(addr string, webUiDir string, cfgPath string, token string) (*http.Server, error) {
+func StartWebServer(addr string, webUiDir string, cfgPath string, downloaders map[string]RpcClient, token string) (*http.Server, error) {
 	mux := http.NewServeMux()
 
 	// --- API Routes ---
@@ -280,6 +331,7 @@ func StartWebServer(addr string, webUiDir string, cfgPath string, token string) 
 	// Wrap API handlers with auth middleware if token is provided
 	mux.HandleFunc("/api/tasks", authMiddleware(token, handleTasks(cfgPath)))
 	mux.HandleFunc("/api/tasks/", authMiddleware(token, handleSingleTask(cfgPath))) // Trailing slash handles /api/tasks/{name}
+	mux.HandleFunc("/api/downloads", authMiddleware(token, handleDownloads(downloaders)))
 
 	// --- Static File Serving ---
 	if webUiDir != "" {
