@@ -136,3 +136,76 @@ func (a *Aria2c) CleanUp() {
 func (a *Aria2c) CloseRpc() {
 	a.httpClient.CloseIdleConnections()
 }
+
+// GetActiveDownloads returns the current download status from aria2c
+func (a *Aria2c) GetActiveDownloads() ([]DownloadStatus, error) {
+	// Get active downloads
+	activeResp, err := a.call("aria2.tellActive", []any{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active downloads: %w", err)
+	}
+
+	// Get waiting downloads (including paused)
+	waitingResp, err := a.call("aria2.tellWaiting", []any{0, 1000}) // Get first 1000 waiting items
+	if err != nil {
+		return nil, fmt.Errorf("failed to get waiting downloads: %w", err)
+	}
+
+	var statuses []DownloadStatus
+
+	// Process active downloads
+	if activeList, ok := activeResp.Result.([]any); ok {
+		for _, item := range activeList {
+			if download, ok := item.(map[string]any); ok {
+				status := a.parseDownloadStatus(download)
+				statuses = append(statuses, status)
+			}
+		}
+	}
+
+	// Process waiting downloads
+	if waitingList, ok := waitingResp.Result.([]any); ok {
+		for _, item := range waitingList {
+			if download, ok := item.(map[string]any); ok {
+				status := a.parseDownloadStatus(download)
+				statuses = append(statuses, status)
+			}
+		}
+	}
+
+	return statuses, nil
+}
+
+func (a *Aria2c) parseDownloadStatus(download map[string]any) DownloadStatus {
+	status := DownloadStatus{
+		ID:          fmt.Sprintf("%v", download["gid"]),
+		Name:        fmt.Sprintf("%v", download["bittorrent"]), // TODO: parse name from bittorrent info
+		Downloader:  "aria2c",
+		PercentDone: 0,
+	}
+
+	// Parse status
+	switch fmt.Sprintf("%v", download["status"]) {
+	case "active":
+		status.Status = "downloading"
+	case "waiting":
+		status.Status = "stopped"
+	case "paused":
+		status.Status = "stopped"
+	default:
+		status.Status = "error"
+	}
+
+	// Parse progress
+	if total, ok := download["totalLength"].(float64); ok {
+		if completed, ok := download["completedLength"].(float64); ok && total > 0 {
+			status.PercentDone = completed / total
+			if status.PercentDone >= 1.0 {
+				status.IsFinished = true
+				status.Status = "seeding"
+			}
+		}
+	}
+
+	return status
+}

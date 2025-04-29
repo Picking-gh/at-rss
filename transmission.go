@@ -187,6 +187,60 @@ func (t *Transmission) CloseRpc() {
 	t.httpClient.CloseIdleConnections()
 }
 
+// GetActiveDownloads returns the current download status from Transmission
+func (t *Transmission) GetActiveDownloads() ([]DownloadStatus, error) {
+	getArgs := struct {
+		Fields []string `json:"fields"`
+	}{
+		Fields: []string{"id", "name", "status", "isFinished", "percentDone"},
+	}
+
+	resp, err := t.call("torrent-get", getArgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get torrent list: %w", err)
+	}
+
+	var torrentList torrentGetResponse
+	argsMap, ok := resp.Arguments.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected format for torrent-get arguments")
+	}
+	argsJSON, err := json.Marshal(argsMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal torrent-get arguments: %w", err)
+	}
+	if err := json.Unmarshal(argsJSON, &torrentList); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal torrent list: %w", err)
+	}
+
+	var statuses []DownloadStatus
+	for _, torrent := range torrentList.Torrents {
+		status := DownloadStatus{
+			ID:          fmt.Sprintf("%d", torrent.ID),
+			Name:        torrent.Name,
+			Downloader:  "transmission",
+			IsFinished:  torrent.IsFinished,
+			PercentDone: torrent.PercentDone,
+		}
+
+		// Convert Transmission status to our unified status
+		switch {
+		case torrent.Status == 4: // downloading
+			status.Status = "downloading"
+		case torrent.Status == 6: // seeding
+			status.Status = "seeding"
+		case torrent.Status == 0: // stopped
+			status.Status = "stopped"
+		default:
+			status.Status = "error"
+		}
+
+		statuses = append(statuses, status)
+	}
+
+	return statuses, nil
+}
+
 // CleanUp removes completed and stopped torrents from Transmission (without deleting data).
 func (t *Transmission) CleanUp() {
 	getArgs := struct {
