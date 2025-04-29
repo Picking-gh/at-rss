@@ -92,6 +92,7 @@
       filter: null,
       extracter: null,
       isNew: true,
+      isModified: false,
     };
 
     showNameInputModal = false;
@@ -100,13 +101,13 @@
   }
 
   // --- Event Handlers from TaskDetail ---
-  function handleTaskSaved(taskName: string) {
+  function onTaskSaved(taskName: string) {
     if (tasks[taskName]) {
       tasks[taskName].isModified = false;
     }
   }
 
-  function handleTaskDeleted(taskName: string) {
+  function onTaskDeleted(taskName: string) {
     if (tasks[taskName]) {
       selectedTaskName = null;
       delete tasks[taskName];
@@ -114,7 +115,7 @@
     }
   }
 
-  function handleNewTaskCreated(taskName: string) {
+  function onTaskCreated(taskName: string) {
     if (tasks[taskName]) {
       isAddingTask = false;
       tasks[taskName].isNew = false;
@@ -122,7 +123,7 @@
     }
   }
 
-  function handleNewTaskCanceled(taskName: string) {
+  function onNewTaskCanceled(taskName: string) {
     if (tasks[taskName]) {
       selectedTaskName = null;
       isAddingTask = false;
@@ -131,8 +132,7 @@
     }
   }
 
-  function handleTaskModified(modifiedTask: { taskName: string; taskConfig: any; isModified: boolean }) {
-    const { taskName, taskConfig, isModified } = modifiedTask;
+  function onTaskModified({ taskName, taskConfig, isModified }: { taskName: string; taskConfig: any; isModified: boolean }) {
     if (tasks[taskName]) {
       tasks[taskName] = taskConfig;
       tasks[taskName].isModified = isModified;
@@ -194,20 +194,12 @@
         taskName={newTaskName}
         taskConfig={tasks[newTaskName]}
         {apiFetch}
-        taskSaved={handleNewTaskCreated}
-        taskAddCanceled={handleNewTaskCanceled}
-        taskModified={handleTaskModified}
+        onTaskSaved={onTaskCreated}
+        {onNewTaskCanceled}
+        {onTaskModified}
       />
     {:else if selectedTaskName && tasks[selectedTaskName]}
-      <TaskDetail
-        isNew={false}
-        taskName={selectedTaskName}
-        taskConfig={tasks[selectedTaskName]}
-        {apiFetch}
-        taskSaved={handleTaskSaved}
-        taskDeleted={handleTaskDeleted}
-        taskModified={handleTaskModified}
-      />
+      <TaskDetail isNew={false} taskName={selectedTaskName} taskConfig={tasks[selectedTaskName]} {apiFetch} {onTaskSaved} {onTaskDeleted} {onTaskModified} />
     {:else if selectedTaskName}
       <p>Loading task details for {selectedTaskName}... or task data missing.</p>
     {:else}

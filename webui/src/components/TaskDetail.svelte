@@ -11,21 +11,21 @@
     taskConfig: any; // The configuration object for the selected task
     taskName: string; // The name of the selected task
     isNew?: boolean; // Flag indicating if it's a new task form
-    apiFetch: (url: string, options?: RequestInit) => Promise<any>; // Function passed from parent
-    taskModified?: (modifiedTask: { taskName: string; taskConfig: any; isModified: boolean }) => void;
-    taskSaved?: (taskName: string) => void;
-    taskDeleted?: (taskName: string) => void;
-    taskAddCanceled?: (taskName: string) => void;
+    apiFetch: (url: string, options?: RequestInit) => Promise<any>;
+    onTaskModified?: (modifiedTask: { taskName: string; taskConfig: any; isModified: boolean }) => void;
+    onTaskSaved?: (taskName: string) => void;
+    onTaskDeleted?: (taskName: string) => void;
+    onNewTaskCanceled?: (taskName: string) => void;
   }
 
-  let { taskConfig, taskName, isNew = false, apiFetch, taskModified, taskSaved, taskDeleted, taskAddCanceled }: Props = $props();
+  let { taskConfig, taskName, isNew = false, apiFetch, onTaskModified, onTaskSaved, onTaskDeleted, onNewTaskCanceled }: Props = $props();
 
   let internalTaskConfig = $state(taskConfig); // Deep copy to avoid modifying original object directly
 
   // --- Event Handlers ---
 
   function handleInputChange() {
-    taskModified?.({ taskName: taskName, taskConfig: internalTaskConfig, isModified: true });
+    onTaskModified?.({ taskName: taskName, taskConfig: internalTaskConfig, isModified: true });
   }
 
   function handleDownloaderUpdate(data: DownloaderConfig) {
@@ -53,13 +53,10 @@
     try {
       const method = isNew ? "POST" : "PUT";
       const url = isNew ? "/api/tasks" : `/api/tasks/${taskName}`;
-      // For new tasks, the name is part of the body or handled by the API endpoint structure
       const bodyPayload = isNew ? { config: internalTaskConfig, name: taskName } : internalTaskConfig;
       const body = JSON.stringify(bodyPayload);
-
       await apiFetch(url, { method, headers: { "Content-Type": "application/json" }, body });
-
-      taskSaved?.(taskName);
+      onTaskSaved?.(taskName);
     } catch (error: any) {
       alert(`Failed to save task: ${error.message}`);
       console.error("Save Task Error:", error);
@@ -71,7 +68,7 @@
     if (confirm(`Are you sure you want to delete task "${taskName}"?`)) {
       try {
         await apiFetch(`/api/tasks/${taskName}`, { method: "DELETE" });
-        taskDeleted?.(taskName);
+        onTaskDeleted?.(taskName);
       } catch (error: any) {
         alert(`Failed to delete task: ${error.message}`);
         console.error("Delete Task Error:", error);
@@ -123,7 +120,7 @@
         <button type="button" class="button danger-button" onclick={handleDelete}> Delete Task </button>
       {/if}
       {#if isNew}
-        <button type="button" class="button secondary-button" onclick={() => taskAddCanceled?.(taskName)}> Cancel </button>
+        <button type="button" class="button secondary-button" onclick={() => onNewTaskCanceled?.(taskName)}> Cancel </button>
       {/if}
     </div>
   </form>
