@@ -1,18 +1,6 @@
 <script lang="ts">
   import Modal from "./Modal.svelte";
-
-  // Define the structure for a downloader configuration
-  interface DownloaderConfig {
-    type: "aria2c" | "transmission";
-    host?: string;
-    port?: number | null;
-    rpcPath?: string;
-    token?: string;
-    username?: string;
-    password?: string;
-    useHttps?: boolean;
-    autoCleanUp?: boolean;
-  }
+  import type { DownloaderConfig } from "../types";
 
   import ListItem from "./ListItem.svelte";
   interface Props {
@@ -81,7 +69,7 @@
     showDownloaderModal = true;
   }
 
-  function saveDownloader(event: { preventDefault: () => void }) {
+  function saveDownloader(event: Event) {
     event.preventDefault();
     // Basic validation (can be expanded)
     if (!currentDownloaderData.type) {
@@ -255,8 +243,8 @@
             dragLeave={handleDragLeave}
             drop={handleDrop}
             dragEnd={handleDragEnd}
-            edit={() => openEditModal(index)}
-            del={() => handleDelete(index)}
+            edit={openEditModal}
+            del={handleDelete}
           >
             <strong>Type:</strong>
             {downloader.type} | <strong>RPC URL:</strong>

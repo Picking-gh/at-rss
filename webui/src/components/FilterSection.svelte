@@ -1,12 +1,7 @@
 <script lang="ts">
   import Modal from "./Modal.svelte";
   import ListItem from "./ListItem.svelte";
-
-  // Define the structure for the filter object
-  interface FilterConfig {
-    include?: string[];
-    exclude?: string[];
-  }
+  import type { FilterConfig } from "../types";
 
   interface Props {
     filter?: FilterConfig | null | undefined; // The filter configuration object

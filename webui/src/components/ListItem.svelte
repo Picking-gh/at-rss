@@ -4,13 +4,13 @@
     index: number;
     draggable?: boolean;
     isDraggedOver?: boolean;
-    dragStart?: any;
-    dragEnd?: any;
-    dragOver?: any;
-    dragLeave?: any;
-    drop?: any;
-    edit?: any;
-    del?: any;
+    dragStart?: (index: number) => void;
+    dragEnd?: () => void;
+    dragOver?: (index: number) => void;
+    dragLeave?: (index: number) => void;
+    drop?: (index: number) => void;
+    edit: (index: number) => void;
+    del: (index: number) => void;
     children?: import("svelte").Snippet;
   }
 
@@ -33,7 +33,7 @@
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", index.toString());
-      dragStart(index);
+      dragStart?.(index);
       (event.target as HTMLElement).classList.add("dragging");
     }
   }
@@ -43,21 +43,21 @@
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = "move";
     }
-    dragOver(index);
+    dragOver?.(index);
   }
 
   function handleDragLeave(event: DragEvent) {
-    dragLeave(index);
+    dragLeave?.(index);
   }
 
   function handleDrop(event: DragEvent) {
     event.preventDefault();
-    drop(index);
+    drop?.(index);
   }
 
   function handleDragEnd(event: DragEvent) {
     (event.target as HTMLElement).classList.remove("dragging");
-    dragEnd();
+    dragEnd?.();
   }
 
   // Action Handlers

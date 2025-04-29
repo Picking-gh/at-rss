@@ -134,8 +134,8 @@
             dragLeave={handleDragLeave}
             drop={handleDrop}
             dragEnd={handleDragEnd}
-            edit={() => openEditModal(index)}
-            del={() => handleDelete(index)}
+            edit={openEditModal}
+            del={handleDelete}
           >
             {feed}
           </ListItem>

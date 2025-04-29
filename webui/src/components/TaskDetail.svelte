@@ -3,16 +3,19 @@
   import FeedSection from "./FeedSection.svelte";
   import FilterSection from "./FilterSection.svelte";
   import ExtracterSection from "./ExtracterSection.svelte";
+  import type { DownloaderConfig } from "../types";
+  import type { FilterConfig } from "../types";
+  import type { ExtracterConfig } from "../types";
 
   interface Props {
     taskConfig: any; // The configuration object for the selected task
     taskName: string; // The name of the selected task
     isNew?: boolean; // Flag indicating if it's a new task form
     apiFetch: (url: string, options?: RequestInit) => Promise<any>; // Function passed from parent
-    taskModified?: any;
-    taskSaved?: any;
-    taskDeleted?: any;
-    taskAddCanceled?: any;
+    taskModified?: (modifiedTask: { taskName: string; taskConfig: any; isModified: boolean }) => void;
+    taskSaved?: (taskName: string) => void;
+    taskDeleted?: (taskName: string) => void;
+    taskAddCanceled?: (taskName: string) => void;
   }
 
   let { taskConfig, taskName, isNew = false, apiFetch, taskModified, taskSaved, taskDeleted, taskAddCanceled }: Props = $props();
@@ -22,30 +25,30 @@
   // --- Event Handlers ---
 
   function handleInputChange() {
-    taskModified({ taskName, taskConfig: internalTaskConfig, isModified: true });
+    taskModified?.({ taskName: taskName, taskConfig: internalTaskConfig, isModified: true });
   }
 
-  function handleDownloaderUpdate(event: CustomEvent) {
-    internalTaskConfig.downloaders = event;
+  function handleDownloaderUpdate(data: DownloaderConfig) {
+    internalTaskConfig.downloaders = data;
     handleInputChange();
   }
 
-  function handleFeedUpdate(event: CustomEvent) {
-    internalTaskConfig.feeds = event;
+  function handleFeedUpdate(data: string[]) {
+    internalTaskConfig.feeds = data;
     handleInputChange();
   }
 
-  function handleFilterUpdate(event: CustomEvent) {
-    internalTaskConfig.filter = event;
+  function handleFilterUpdate(data: FilterConfig) {
+    internalTaskConfig.filter = data;
     handleInputChange();
   }
 
-  function handleExtracterUpdate(event: CustomEvent) {
-    internalTaskConfig.extracter = event;
+  function handleExtracterUpdate(data: ExtracterConfig) {
+    internalTaskConfig.extracter = data;
     handleInputChange();
   }
 
-  async function handleSave(event: { preventDefault: () => void }) {
+  async function handleSave(event: Event) {
     event.preventDefault();
     try {
       const method = isNew ? "POST" : "PUT";
@@ -56,18 +59,19 @@
 
       await apiFetch(url, { method, headers: { "Content-Type": "application/json" }, body });
 
-      taskSaved({ taskName: taskName });
+      taskSaved?.(taskName);
     } catch (error: any) {
       alert(`Failed to save task: ${error.message}`);
       console.error("Save Task Error:", error);
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(event: Event) {
+    event.preventDefault();
     if (confirm(`Are you sure you want to delete task "${taskName}"?`)) {
       try {
         await apiFetch(`/api/tasks/${taskName}`, { method: "DELETE" });
-        taskDeleted({ taskName });
+        taskDeleted?.(taskName);
       } catch (error: any) {
         alert(`Failed to delete task: ${error.message}`);
         console.error("Delete Task Error:", error);
@@ -119,7 +123,7 @@
         <button type="button" class="button danger-button" onclick={handleDelete}> Delete Task </button>
       {/if}
       {#if isNew}
-        <button type="button" class="button secondary-button" onclick={() => taskAddCanceled({ taskName })}> Cancel </button>
+        <button type="button" class="button secondary-button" onclick={() => taskAddCanceled?.(taskName)}> Cancel </button>
       {/if}
     </div>
   </form>

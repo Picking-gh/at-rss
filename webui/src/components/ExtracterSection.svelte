@@ -1,9 +1,5 @@
 <script lang="ts">
-  // Define the structure for the extracter object
-  interface ExtracterConfig {
-    tag?: "title" | "link" | "description" | "enclosure" | "guid";
-    pattern?: string;
-  }
+  import type { ExtracterConfig } from "../types";
 
   interface Props {
     extracter?: ExtracterConfig | null | undefined; // The extracter configuration object
@@ -14,10 +10,6 @@
 
   // --- Local State ---
   let internalExtracter: ExtracterConfig = $state(extracter ? extracter : {});
-
-  $effect(() => {
-    internalExtracter = extracter ? extracter : {};
-  });
 
   // --- Event Handlers ---
   function handleInputChange() {
@@ -48,7 +40,6 @@
         <option value="description">description</option>
         <option value="enclosure">enclosure</option>
         <option value="guid">guid</option>
-        <!-- Add other types if supported -->
       </select>
     </div>
 

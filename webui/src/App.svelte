@@ -100,15 +100,13 @@
   }
 
   // --- Event Handlers from TaskDetail ---
-  function handleTaskSaved(event: { taskName: string }) {
-    const { taskName } = event;
+  function handleTaskSaved(taskName: string) {
     if (tasks[taskName]) {
       tasks[taskName].isModified = false;
     }
   }
 
-  function handleTaskDeleted(event: { taskName: string }) {
-    const { taskName } = event;
+  function handleTaskDeleted(taskName: string) {
     if (tasks[taskName]) {
       selectedTaskName = null;
       delete tasks[taskName];
@@ -116,8 +114,7 @@
     }
   }
 
-  function handleNewTaskCreated(event: { taskName: string }) {
-    const { taskName } = event;
+  function handleNewTaskCreated(taskName: string) {
     if (tasks[taskName]) {
       isAddingTask = false;
       tasks[taskName].isNew = false;
@@ -125,8 +122,7 @@
     }
   }
 
-  function handleNewTaskCanceled(event: { taskName: string }) {
-    const { taskName } = event;
+  function handleNewTaskCanceled(taskName: string) {
     if (tasks[taskName]) {
       selectedTaskName = null;
       isAddingTask = false;
@@ -135,8 +131,8 @@
     }
   }
 
-  function handleTaskModified(event: { taskName: string; taskConfig: any; isModified: boolean }) {
-    const { taskName, taskConfig, isModified } = event;
+  function handleTaskModified(modifiedTask: { taskName: string; taskConfig: any; isModified: boolean }) {
+    const { taskName, taskConfig, isModified } = modifiedTask;
     if (tasks[taskName]) {
       tasks[taskName] = taskConfig;
       tasks[taskName].isModified = isModified;

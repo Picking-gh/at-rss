@@ -4,7 +4,7 @@
   interface Props {
     showModal?: boolean;
     title?: string;
-    close?: any;
+    close?: () => void;
     body?: import("svelte").Snippet;
     footer?: import("svelte").Snippet;
   }
@@ -12,7 +12,11 @@
   let { showModal = $bindable(false), title = "Modal Title", close, body, footer }: Props = $props();
 
   function closeModal() {
-    close();
+    if (typeof close === "function") {
+      close();
+    } else {
+      showModal = false;
+    }
   }
 
   // Handle Escape key press
