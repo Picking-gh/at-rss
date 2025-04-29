@@ -62,6 +62,12 @@ or
 
 Or run as a systemd service (see at-rss.service for example).
 
+For more command-line options, run
+
+```bash
+ ./at-rss -h
+ ```
+
 ## Configuration Options
 
 | Key          | Required | Description                          |

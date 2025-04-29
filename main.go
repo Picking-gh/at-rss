@@ -23,7 +23,7 @@ import (
 type options struct {
 	Config           string `short:"c" long:"conf" description:"Config file" default:"at-rss.conf"`
 	WebListenAddress string `long:"web-listen" description:"Listen address for the web UI/API (e.g., ':8080'). If empty, web server is disabled." default:""`
-	WebUIDir         string `long:"web-ui-dir" description:"Directory containing the web UI static files (index.html, etc.)" default:"./webui"`
+	WebUIDir         string `long:"web-ui-dir" description:"Directory containing the web UI static files (index.html, etc.)" default:"webui/dist"`
 	Token            string `long:"token" description:"Token for API authentication. If empty, no authentication is required." default:""`
 	FetchInterval    int    `long:"default-fetch-interval" description:"Default fetch interval in minutes (overrides config default)" default:"0"`
 }

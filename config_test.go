@@ -205,7 +205,7 @@ feed_tm_defaults:
 				t.Fatalf("Failed to close temp file: %v", err)
 			}
 
-			tasks, err := LoadConfig(filePath)
+			tasks, err := LoadConfig(filePath, 10)
 
 			if err != nil {
 				t.Fatalf("LoadConfig() returned unexpected error for test case '%s': %v", tt.name, err)
