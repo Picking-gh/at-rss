@@ -8,12 +8,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"net/http" // Added for web server
+	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -32,10 +30,7 @@ type options struct {
 
 var opt options
 var parser = flags.NewParser(&opt, flags.Default)
-var webServer *http.Server // Global variable to hold the server instance
-
-// Global download status cache
-var downloadStatusCache sync.Map
+var webServer *http.Server
 
 func main() {
 	if _, err := parser.Parse(); err != nil {
@@ -65,6 +60,7 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
+	defer wg.Wait()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -79,6 +75,11 @@ func main() {
 			slog.Warn("No task is running")
 			return nil
 		}
+
+		if opt.WebListenAddress != "" {
+			GetAllDownloaders(tasks)
+		}
+
 		for _, task := range tasks {
 			wg.Add(1)
 			go func(task *Task) {
@@ -90,79 +91,17 @@ func main() {
 		return nil
 	}
 	if err := atRSS(ctx); err != nil {
-		return // Exit if initial config load fails
+		return
 	}
 
 	// --- Start Web Server (if configured) ---
 	var errWeb error
 	if opt.WebListenAddress != "" {
-		// Initialize downloaders from config
-		downloaders := make(map[string]RpcClient)
-		taskConfigs, err := LoadYAMLConfig(opt.Config)
-		if err == nil {
-			for taskName, taskConfig := range taskConfigs {
-				for i, dlConfig := range taskConfig.Downloaders {
-					// Create unique name for each downloader instance
-					dlName := fmt.Sprintf("%s-downloader-%d", taskName, i)
-
-					switch strings.ToLower(dlConfig.Type) {
-					case "aria2c":
-						downloaders[dlName] = &Aria2c{
-							rpcURL: fmt.Sprintf("%s://%s:%d%s",
-								map[bool]string{true: "https", false: "http"}[dlConfig.UseHttps],
-								dlConfig.Host,
-								dlConfig.Port,
-								dlConfig.RpcPath),
-							rpcToken: dlConfig.Token,
-						}
-					case "transmission":
-						downloaders[dlName] = &Transmission{
-							rpcURL: fmt.Sprintf("%s://%s:%d%s",
-								map[bool]string{true: "https", false: "http"}[dlConfig.UseHttps],
-								dlConfig.Host,
-								dlConfig.Port,
-								dlConfig.RpcPath),
-							user:     dlConfig.Username,
-							password: dlConfig.Password,
-						}
-					}
-				}
-			}
-		} else {
-			slog.Error("Failed to load config for downloader initialization", "error", err)
-		}
-
-		// Pass the actual config path and token being used
-		webServer, errWeb = StartWebServer(opt.WebListenAddress, opt.WebUIDir, opt.Config, downloaders, opt.Token)
+		webServer, errWeb = StartWebServer(opt.WebListenAddress, opt.WebUIDir, opt.Config, opt.Token)
 		if errWeb != nil {
 			slog.Error("Failed to start web server", "error", errWeb)
-			// Decide if this is fatal. For now, let's log and continue without web UI.
-			// return
+			return
 		}
-
-		// Start periodic download status updates
-		go func() {
-			ticker := time.NewTicker(30 * time.Second)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ticker.C:
-					// Update download status for all downloaders
-					for name, client := range downloaders {
-						statuses, err := client.GetActiveDownloads()
-						if err != nil {
-							slog.Error("Failed to get downloads from downloader",
-								"name", name, "error", err)
-							continue
-						}
-						downloadStatusCache.Store(name, statuses)
-					}
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
 	} else {
 		slog.Info("Web server is disabled (web-listen address not provided).")
 	}
@@ -178,11 +117,10 @@ func main() {
 			// --- Graceful Shutdown for Web Server ---
 			if webServer != nil {
 				slog.Info("Stopping web server...")
-				// Create a context with timeout for shutdown
-				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second) // Use imported time
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer shutdownCancel()
 
-				if err := webServer.Shutdown(shutdownCtx); err != nil { // Use imported context
+				if err := webServer.Shutdown(shutdownCtx); err != nil {
 					slog.Error("Web server shutdown failed", "error", err)
 				} else {
 					slog.Info("Web server stopped.")
@@ -190,10 +128,10 @@ func main() {
 			}
 			// --- End Graceful Shutdown ---
 
-			cancel()  // Signal tasks to stop
-			wg.Wait() // Wait for all tasks to finish
+			cancel()
+			wg.Wait()
 			slog.Info("All tasks stopped. Exiting.")
-			return // Exit main function
+			return
 		case event, ok := <-watcher.Events:
 			if !ok {
 				slog.Error("Configure file watching error", "error", err)
@@ -209,11 +147,7 @@ func main() {
 						slog.Info("Tasks stopped.")
 						ctx, cancel = context.WithCancel(context.Background())
 						if err := atRSS(ctx); err != nil {
-							// If reload fails, we should probably stop the application
-							// as the state might be inconsistent.
 							slog.Error("Failed to reload config and restart tasks", "error", err)
-							// Consider stopping the program here:
-							// stop <- syscall.SIGTERM // Send signal to trigger shutdown sequence
 							return
 						}
 						debounceTimer = nil

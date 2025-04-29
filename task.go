@@ -27,6 +27,7 @@ type ParsedDownloaderConfig struct {
 }
 
 type Task struct {
+	Name          string
 	Downloaders   []ParsedDownloaderConfig
 	FetchInterval time.Duration
 	FeedUrls      []string

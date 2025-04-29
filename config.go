@@ -192,6 +192,7 @@ func parseTask(name string, config TaskConfig, cc *gocc.OpenCC, fetchInterval in
 	}
 
 	task := &Task{
+		Name:          name,
 		parserConfig:  &ParserConfig{},
 		FeedUrls:      config.Feeds,
 		FetchInterval: time.Duration(config.Interval) * time.Minute,
