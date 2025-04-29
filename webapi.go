@@ -8,58 +8,160 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
+	"time"
 )
 
 // --- Data Structures ---
 
-// DownloaderGroup represents a group of downloads from the same downloader
-type DownloaderGroup struct {
-	Name      string           `json:"name"`
-	Type      string           `json:"type"`
-	Downloads []DownloadStatus `json:"downloads"`
+type downloaderInfo struct {
+	dc        ParsedDownloaderConfig
+	TaskNames []string
+}
+
+var (
+	downloaderMap   = make(map[string]downloaderInfo)
+	downloaderMutex sync.RWMutex
+)
+
+// GetAllDownloaders updates the global downloader map with information from tasks
+func GetAllDownloaders(tasks []*Task) {
+	downloaderMutex.Lock()
+	defer downloaderMutex.Unlock()
+
+	// Clear existing data
+	downloaderMap = make(map[string]downloaderInfo)
+
+	// Build new map
+	for _, task := range tasks {
+		for _, dlConfig := range task.Downloaders {
+			info, exists := downloaderMap[dlConfig.RpcUrl]
+			if !exists {
+				info = downloaderInfo{
+					dc:        dlConfig,
+					TaskNames: []string{task.Name},
+				}
+			} else {
+				// Append task name if not already present
+				found := slices.Contains(info.TaskNames, task.Name)
+				if !found {
+					info.TaskNames = append(info.TaskNames, task.Name)
+				}
+			}
+			downloaderMap[dlConfig.RpcUrl] = info
+		}
+	}
 }
 
 // --- HTTP Handler Factories ---
 
-// handleDownloads creates a handler function for the /api/downloads endpoint
-func handleDownloads(downloaders map[string]RpcClient) http.HandlerFunc {
+// handleDownloaders creates a handler function for the /api/downloaders endpoint
+func handleDownloaders() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Group downloads by downloader from cache
-		groups := make(map[string]*DownloaderGroup)
-		downloadStatusCache.Range(func(key, value interface{}) bool {
-			name := key.(string)
-			statuses := value.([]DownloadStatus)
-
-			// Determine downloader type from name (format: "taskName-downloader-N")
-			parts := strings.Split(name, "-")
-			downloaderType := ""
-			if len(parts) >= 3 {
-				downloaderType = parts[len(parts)-2] // "downloader" in name
-			}
-
-			groups[name] = &DownloaderGroup{
-				Name:      name,
-				Type:      downloaderType,
-				Downloads: statuses,
-			}
-			return true
-		})
-
-		// Convert map to slice for response
-		var result []DownloaderGroup
-		for _, group := range groups {
-			result = append(result, *group)
-		}
+		downloaderMutex.RLock()
+		defer downloaderMutex.RUnlock()
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(result); err != nil {
-			slog.Error("Failed to encode downloads response", "error", err)
+		if err := json.NewEncoder(w).Encode(downloaderMap); err != nil {
+			slog.Error("Failed to encode downloaders response", "error", err)
+		}
+	}
+}
+
+// handleDownloads creates a handler function for the /api/downloads endpoint with SSE support
+func handleDownloads() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Set SSE headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		// Get RpcUrl from X-Rpc-Url header
+		rpcUrl := r.Header.Get("X-Rpc-Url")
+		if rpcUrl == "" {
+			// Fallback to query parameter for backward compatibility
+			rpcUrl = r.URL.Query().Get("RpcUrl")
+		}
+
+		// Create a ticker for periodic updates (e.g. every second)
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		// Create a channel to detect client disconnection
+		clientGone := w.(http.CloseNotifier).CloseNotify()
+
+		for {
+			select {
+			case <-ticker.C:
+				var allStatus []DownloadStatus
+
+				downloaderMutex.RLock()
+				if rpcUrl != "" {
+					// Get status for specific downloader
+					if info, exists := downloaderMap[rpcUrl]; exists {
+						client, err := createRpcClientForConfig(r.Context(), info.dc)
+						if err != nil {
+							slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
+							continue
+						}
+						defer client.CloseRpc()
+
+						status, err := client.GetActiveDownloads()
+						if err != nil {
+							slog.Error("Failed to get active downloads", "rpcUrl", rpcUrl, "error", err)
+							continue
+						}
+						allStatus = append(allStatus, status...)
+					}
+				} else {
+					// Get status for all downloaders
+					for url, info := range downloaderMap {
+						client, err := createRpcClientForConfig(r.Context(), info.dc)
+						if err != nil {
+							slog.Error("Failed to create RPC client", "rpcUrl", url, "error", err)
+							continue
+						}
+						defer client.CloseRpc()
+
+						status, err := client.GetActiveDownloads()
+						if err != nil {
+							slog.Error("Failed to get active downloads", "rpcUrl", url, "error", err)
+							continue
+						}
+						allStatus = append(allStatus, status...)
+					}
+				}
+				downloaderMutex.RUnlock()
+
+				// Send SSE event
+				data, err := json.Marshal(allStatus)
+				if err != nil {
+					slog.Error("Failed to marshal download status", "error", err)
+					continue
+				}
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+					slog.Error("Failed to write SSE data", "error", err)
+					return
+				}
+				w.(http.Flusher).Flush()
+
+			case <-clientGone:
+				// Client disconnected
+				slog.Debug("Client disconnected from SSE stream")
+				return
+			}
 		}
 	}
 }
@@ -321,9 +423,9 @@ func authMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
 }
 
 // StartWebServer initializes and starts the HTTP server for the API and static UI files.
-// It accepts the listen address, UI directory path, config file path, downloaders map and optional token.
+// It accepts the listen address, UI directory path, config file path and optional token.
 // Returns the http.Server instance for graceful shutdown and any error during setup.
-func StartWebServer(addr string, webUiDir string, cfgPath string, downloaders map[string]RpcClient, token string) (*http.Server, error) {
+func StartWebServer(addr string, webUiDir string, cfgPath string, token string) (*http.Server, error) {
 	mux := http.NewServeMux()
 
 	// --- API Routes ---
@@ -331,7 +433,8 @@ func StartWebServer(addr string, webUiDir string, cfgPath string, downloaders ma
 	// Wrap API handlers with auth middleware if token is provided
 	mux.HandleFunc("/api/tasks", authMiddleware(token, handleTasks(cfgPath)))
 	mux.HandleFunc("/api/tasks/", authMiddleware(token, handleSingleTask(cfgPath))) // Trailing slash handles /api/tasks/{name}
-	mux.HandleFunc("/api/downloads", authMiddleware(token, handleDownloads(downloaders)))
+	mux.HandleFunc("/api/downloads", authMiddleware(token, handleDownloads()))
+	mux.HandleFunc("/api/downloaders", authMiddleware(token, handleDownloaders()))
 
 	// --- Static File Serving ---
 	if webUiDir != "" {
