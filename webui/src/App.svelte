@@ -11,15 +11,33 @@
   let showNameInputModal = $state(false);
   let newTaskName = $state("");
   let nameInputError = $state("");
+  let token = $state(localStorage.getItem("apiToken") || "");
+  let showTokenModal = $state(false);
+  let tokenInput = $state("");
+  let tokenError = $state("");
 
   // --- API Helper ---
   async function apiFetch(url: string, options: RequestInit = {}) {
     try {
-      const response = await fetch(url, options);
+      // Add Authorization header if token exists
+      const headers = new Headers(options.headers);
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+
+      const response = await fetch(url, { ...options, headers });
+
+      // Handle 401 Unauthorized
+      if (response.status === 401) {
+        showTokenModal = true;
+        throw new Error("Unauthorized - Please provide a valid token");
+      }
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
+
       const contentType = response.headers.get("content-type");
       return contentType?.includes("application/json") ? await response.json() : await response.text();
     } catch (err: any) {
@@ -28,6 +46,20 @@
     } finally {
       isLoading = false;
     }
+  }
+
+  function saveToken() {
+    if (!tokenInput.trim()) {
+      tokenError = "Token cannot be empty";
+      return;
+    }
+    token = tokenInput;
+    localStorage.setItem("apiToken", token);
+    showTokenModal = false;
+    tokenInput = "";
+    tokenError = "";
+    // Reload tasks after setting token
+    loadTasks();
   }
 
   // --- Task Loading ---
@@ -160,6 +192,24 @@
       <button type="button" class="button secondary-button" onclick={() => (showNameInputModal = false)}>Cancel</button>
     {/snippet}
   </Modal>
+
+  <!-- Token Input Modal -->
+  <Modal showModal={showTokenModal} title="API Authentication" close={() => (showTokenModal = false)}>
+    {#snippet body()}
+      <div class="form-group">
+        <label for="token-input">API Token</label>
+        <input id="token-input" type="password" bind:value={tokenInput} class:error={tokenError} placeholder="Enter your API token" />
+        {#if tokenError}
+          <p class="error-message">{tokenError}</p>
+        {/if}
+      </div>
+    {/snippet}
+    {#snippet footer()}
+      <button type="button" class="button primary-button" onclick={saveToken}>Save</button>
+      <button type="button" class="button secondary-button" onclick={() => (showTokenModal = false)}>Cancel</button>
+    {/snippet}
+  </Modal>
+
   <aside class="sidebar task-list-panel">
     <h2>Tasks</h2>
     {#if isLoading}

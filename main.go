@@ -24,6 +24,7 @@ type options struct {
 	Config           string `short:"c" long:"conf" description:"Config file" default:"at-rss.conf"` // Changed default for easier local testing
 	WebListenAddress string `long:"web-listen" description:"Listen address for the web UI/API (e.g., ':8080'). If empty, web server is disabled." default:""`
 	WebUIDir         string `long:"web-ui-dir" description:"Directory containing the web UI static files (index.html, etc.)" default:"./webui"`
+	Token            string `long:"token" description:"Token for API authentication. If empty, no authentication is required." default:""`
 }
 
 var opt options
@@ -89,8 +90,8 @@ func main() {
 	// --- Start Web Server (if configured) ---
 	var errWeb error
 	if opt.WebListenAddress != "" {
-		// Pass the actual config path being used
-		webServer, errWeb = StartWebServer(opt.WebListenAddress, opt.WebUIDir, opt.Config)
+		// Pass the actual config path and token being used
+		webServer, errWeb = StartWebServer(opt.WebListenAddress, opt.WebUIDir, opt.Config, opt.Token)
 		if errWeb != nil {
 			slog.Error("Failed to start web server", "error", errWeb)
 			// Decide if this is fatal. For now, let's log and continue without web UI.

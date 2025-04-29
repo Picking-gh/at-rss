@@ -248,16 +248,38 @@ func deleteTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName
 
 // --- Web Server Setup ---
 
+// authMiddleware wraps a handler with token authentication if token is not empty
+func authMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for static files and when token is empty
+		if strings.HasPrefix(r.URL.Path, "/api") && token != "" {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+				http.Error(w, "Unauthorized: Missing or invalid Authorization header", http.StatusUnauthorized)
+				return
+			}
+
+			providedToken := strings.TrimPrefix(authHeader, "Bearer ")
+			if providedToken != token {
+				http.Error(w, "Unauthorized: Invalid token", http.StatusUnauthorized)
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
 // StartWebServer initializes and starts the HTTP server for the API and static UI files.
-// It accepts the listen address, UI directory path, and config file path.
+// It accepts the listen address, UI directory path, config file path and optional token.
 // Returns the http.Server instance for graceful shutdown and any error during setup.
-func StartWebServer(addr string, webUiDir string, cfgPath string) (*http.Server, error) {
+func StartWebServer(addr string, webUiDir string, cfgPath string, token string) (*http.Server, error) {
 	mux := http.NewServeMux()
 
 	// --- API Routes ---
 	// Use closures to pass the config path to the handler factories
-	mux.HandleFunc("/api/tasks", handleTasks(cfgPath))
-	mux.HandleFunc("/api/tasks/", handleSingleTask(cfgPath)) // Trailing slash handles /api/tasks/{name}
+	// Wrap API handlers with auth middleware if token is provided
+	mux.HandleFunc("/api/tasks", authMiddleware(token, handleTasks(cfgPath)))
+	mux.HandleFunc("/api/tasks/", authMiddleware(token, handleSingleTask(cfgPath))) // Trailing slash handles /api/tasks/{name}
 
 	// --- Static File Serving ---
 	if webUiDir != "" {
