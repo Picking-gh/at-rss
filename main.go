@@ -21,10 +21,11 @@ import (
 )
 
 type options struct {
-	Config           string `short:"c" long:"conf" description:"Config file" default:"at-rss.conf"` // Changed default for easier local testing
+	Config           string `short:"c" long:"conf" description:"Config file" default:"at-rss.conf"`
 	WebListenAddress string `long:"web-listen" description:"Listen address for the web UI/API (e.g., ':8080'). If empty, web server is disabled." default:""`
 	WebUIDir         string `long:"web-ui-dir" description:"Directory containing the web UI static files (index.html, etc.)" default:"./webui"`
 	Token            string `long:"token" description:"Token for API authentication. If empty, no authentication is required." default:""`
+	FetchInterval    int    `long:"default-fetch-interval" description:"Default fetch interval in minutes (overrides config default)" default:"0"`
 }
 
 var opt options
@@ -64,7 +65,7 @@ func main() {
 	defer cancel()
 
 	atRSS := func(ctx context.Context) error {
-		tasks, err := LoadConfig(opt.Config)
+		tasks, err := LoadConfig(opt.Config, opt.FetchInterval)
 		if err != nil {
 			slog.Error("Failed to load config", "error", err)
 			return err

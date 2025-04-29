@@ -102,7 +102,7 @@ var (
 )
 
 // LoadConfig loads and validates the configuration from YAML file
-func LoadConfig(filename string) ([]*Task, error) {
+func LoadConfig(filename string, fetchInterval int) ([]*Task, error) {
 	taskConfigs, err := LoadYAMLConfig(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
@@ -129,7 +129,7 @@ func LoadConfig(filename string) ([]*Task, error) {
 
 	var tasks []*Task
 	for name, taskConfig := range taskConfigs {
-		task, err := parseTask(name, taskConfig, cc)
+		task, err := parseTask(name, taskConfig, cc, fetchInterval)
 		if err != nil {
 			return nil, fmt.Errorf("invalid configuration for task %q: %w", name, err)
 		}
@@ -182,9 +182,13 @@ func SaveYAMLConfig(cfgPath string, taskConfigs map[string]TaskConfig) error {
 }
 
 // parseTask converts TaskConfig to Task, accepting the task name for context
-func parseTask(name string, config TaskConfig, cc *gocc.OpenCC) (*Task, error) {
+func parseTask(name string, config TaskConfig, cc *gocc.OpenCC, fetchInterval int) (*Task, error) {
 	if config.Interval <= 0 {
-		config.Interval = defaultFetchInterval
+		if fetchInterval > 0 {
+			config.Interval = fetchInterval
+		} else {
+			config.Interval = defaultFetchInterval
+		}
 	}
 
 	task := &Task{
