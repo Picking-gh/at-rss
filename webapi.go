@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,30 +15,31 @@ import (
 	"time"
 )
 
-// --- Data Structures ---
+// --- Downloaders Management ---
 
 type downloaderInfo struct {
 	dc        ParsedDownloaderConfig
 	TaskNames []string
 }
 
+type downloaderMap struct {
+	ctx context.Context
+	m   map[string]downloaderInfo
+}
+
 var (
-	downloaderMap   = make(map[string]downloaderInfo)
-	downloaderMutex sync.RWMutex
+	downloaders      downloaderMap
+	downloadersMutex sync.RWMutex
 )
 
-// GetAllDownloaders updates the global downloader map with information from tasks
-func GetAllDownloaders(tasks []*Task) {
-	downloaderMutex.Lock()
-	defer downloaderMutex.Unlock()
+// getUniqueDownloaders builds the global downloader map with information from tasks
+func getUniqueDownloaders(ctx context.Context, tasks []*Task) {
+	downloaders.ctx = ctx
+	downloaders.m = make(map[string]downloaderInfo)
 
-	// Clear existing data
-	downloaderMap = make(map[string]downloaderInfo)
-
-	// Build new map
 	for _, task := range tasks {
 		for _, dlConfig := range task.Downloaders {
-			info, exists := downloaderMap[dlConfig.RpcUrl]
+			info, exists := downloaders.m[dlConfig.RpcUrl]
 			if !exists {
 				info = downloaderInfo{
 					dc:        dlConfig,
@@ -50,8 +52,56 @@ func GetAllDownloaders(tasks []*Task) {
 					info.TaskNames = append(info.TaskNames, task.Name)
 				}
 			}
-			downloaderMap[dlConfig.RpcUrl] = info
+			downloaders.m[dlConfig.RpcUrl] = info
 		}
+	}
+}
+
+// --- Helpers ---
+
+func parseRequest[T any](w http.ResponseWriter, r *http.Request, target T) bool {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		sendError(w, "Failed to read request body", http.StatusBadRequest, "error", err)
+		return false
+	}
+	defer r.Body.Close()
+
+	if err := json.Unmarshal(body, target); err != nil {
+		sendError(w, fmt.Sprintf("Invalid JSON format: %s", err), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func validateTaskRequest(w http.ResponseWriter, name string, config TaskConfig) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		sendError(w, "Task name cannot be empty", http.StatusBadRequest)
+		return false
+	}
+
+	if len(config.Downloaders) == 0 {
+		sendError(w, "Task must have at least one downloader", http.StatusBadRequest)
+		return false
+	}
+	if len(config.Feeds) == 0 {
+		sendError(w, "Task must have at least one feed", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func sendError(w http.ResponseWriter, message string, code int, args ...any) {
+	slog.Error("API: "+message, args...)
+	http.Error(w, message, code)
+}
+
+func sendJSONResponse(w http.ResponseWriter, code int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		slog.Error("API: Failed to encode response to JSON", "error", err)
 	}
 }
 
@@ -61,15 +111,16 @@ func GetAllDownloaders(tasks []*Task) {
 func handleDownloaders() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			sendError(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		downloaderMutex.RLock()
-		defer downloaderMutex.RUnlock()
+		downloadersMutex.RLock()
+		defer downloadersMutex.RUnlock()
 
+		// todo send more useful info rather than downloaders itself
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(downloaderMap); err != nil {
+		if err := json.NewEncoder(w).Encode(downloaders); err != nil {
 			slog.Error("Failed to encode downloaders response", "error", err)
 		}
 	}
@@ -79,87 +130,89 @@ func handleDownloaders() http.HandlerFunc {
 func handleDownloads() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			sendError(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
 		}
+
+		// Get RpcUrl from X-Rpc-Url header
+		rpcUrl := r.Header.Get("X-Rpc-Url")
+
+		rpcClients := make(map[string]RpcClient)
+		{
+			downloadersMutex.RLock()
+			defer downloadersMutex.RUnlock()
+			if rpcUrl != "" {
+				if info, exists := downloaders.m[rpcUrl]; exists {
+					client, err := createRpcClientForConfig(r.Context(), info.dc)
+					if err != nil {
+						slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
+					} else {
+						rpcClients[rpcUrl] = client
+					}
+				}
+			} else {
+				for rpcUrl, info := range downloaders.m {
+					client, err := createRpcClientForConfig(r.Context(), info.dc)
+					if err != nil {
+						slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
+					} else {
+						rpcClients[rpcUrl] = client
+					}
+				}
+			}
+		}
+		defer func() {
+			for _, client := range rpcClients {
+				client.CloseRpc()
+			}
+		}()
 
 		// Set SSE headers
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 
-		// Get RpcUrl from X-Rpc-Url header
-		rpcUrl := r.Header.Get("X-Rpc-Url")
-		if rpcUrl == "" {
-			// Fallback to query parameter for backward compatibility
-			rpcUrl = r.URL.Query().Get("RpcUrl")
-		}
+		// Create a channel to detect client disconnection using context
+		clientGone := r.Context().Done()
 
-		// Create a ticker for periodic updates (e.g. every second)
-		ticker := time.NewTicker(1 * time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
-
-		// Create a channel to detect client disconnection
-		clientGone := w.(http.CloseNotifier).CloseNotify()
 
 		for {
 			select {
 			case <-ticker.C:
 				var allStatus []DownloadStatus
 
-				downloaderMutex.RLock()
-				if rpcUrl != "" {
-					// Get status for specific downloader
-					if info, exists := downloaderMap[rpcUrl]; exists {
-						client, err := createRpcClientForConfig(r.Context(), info.dc)
-						if err != nil {
-							slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
-							continue
-						}
-						defer client.CloseRpc()
-
-						status, err := client.GetActiveDownloads()
-						if err != nil {
-							slog.Error("Failed to get active downloads", "rpcUrl", rpcUrl, "error", err)
-							continue
-						}
-						allStatus = append(allStatus, status...)
+				// Get status for all downloaders
+				for rpcUrl, client := range rpcClients {
+					status, err := client.GetActiveDownloads()
+					if err != nil {
+						slog.Error("Failed to get active downloads", "rpcUrl", rpcUrl, "error", err)
+						continue
 					}
-				} else {
-					// Get status for all downloaders
-					for url, info := range downloaderMap {
-						client, err := createRpcClientForConfig(r.Context(), info.dc)
-						if err != nil {
-							slog.Error("Failed to create RPC client", "rpcUrl", url, "error", err)
-							continue
-						}
-						defer client.CloseRpc()
-
-						status, err := client.GetActiveDownloads()
-						if err != nil {
-							slog.Error("Failed to get active downloads", "rpcUrl", url, "error", err)
-							continue
-						}
-						allStatus = append(allStatus, status...)
-					}
+					allStatus = append(allStatus, status...)
 				}
-				downloaderMutex.RUnlock()
 
 				// Send SSE event
-				data, err := json.Marshal(allStatus)
-				if err != nil {
-					slog.Error("Failed to marshal download status", "error", err)
-					continue
+				if len(allStatus) > 0 {
+					data, err := json.Marshal(allStatus)
+					if err != nil {
+						slog.Error("Failed to marshal download status", "error", err)
+						continue
+					}
+					if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+						slog.Error("Failed to write SSE data", "error", err)
+						return
+					}
+					w.(http.Flusher).Flush()
 				}
-				if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
-					slog.Error("Failed to write SSE data", "error", err)
-					return
-				}
-				w.(http.Flusher).Flush()
-
 			case <-clientGone:
 				// Client disconnected
 				slog.Debug("Client disconnected from SSE stream")
+				return
+			case <-downloaders.ctx.Done():
+				// Config file reloading...
+				slog.Debug("Config file reloading...Stop SSE stream")
 				return
 			}
 		}
@@ -175,7 +228,7 @@ func handleTasks(cfgPath string) http.HandlerFunc {
 		case http.MethodPost:
 			createTask(w, r, cfgPath)
 		default:
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			sendError(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		}
 	}
 }
@@ -186,7 +239,7 @@ func handleSingleTask(cfgPath string) http.HandlerFunc {
 		// Extract task name robustly, handling potential trailing slashes
 		pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		if len(pathParts) < 3 || pathParts[2] == "" { // Expecting /api/tasks/{taskName}
-			http.Error(w, "Task name missing or invalid in URL path", http.StatusBadRequest)
+			sendError(w, "Task name missing or invalid in URL path", http.StatusBadRequest)
 			return
 		}
 		taskName := pathParts[2]
@@ -199,105 +252,60 @@ func handleSingleTask(cfgPath string) http.HandlerFunc {
 		case http.MethodDelete:
 			deleteTask(w, r, cfgPath, taskName)
 		default:
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			sendError(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		}
 	}
 }
-
-// --- Specific Request Handlers ---
 
 // getAllTasks retrieves all task configurations.
 func getAllTasks(w http.ResponseWriter, r *http.Request, cfgPath string) {
 	tasks, err := LoadYAMLConfig(cfgPath)
 	if err != nil {
-		slog.Error("API: Failed to load config data", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to load configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(tasks); err != nil {
-		slog.Error("API: Failed to encode tasks to JSON", "error", err)
-		// Avoid writing header again if already started
-	}
+	sendJSONResponse(w, http.StatusOK, tasks)
 }
 
 // createTask creates a new task configuration.
 func createTask(w http.ResponseWriter, r *http.Request, cfgPath string) {
+	// Parse request
 	var newTaskReq struct {
 		Name   string     `json:"name"`
 		Config TaskConfig `json:"config"`
 	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		slog.Error("API: Failed to read request body", "error", err)
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-
-	if err := json.Unmarshal(body, &newTaskReq); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid JSON format: %s", err), http.StatusBadRequest)
+	if !parseRequest(w, r, &newTaskReq) {
 		return
 	}
 
-	// Trim whitespace from name
-	newTaskReq.Name = strings.TrimSpace(newTaskReq.Name)
-	if newTaskReq.Name == "" {
-		http.Error(w, "Task name cannot be empty", http.StatusBadRequest)
+	if !validateTaskRequest(w, newTaskReq.Name, newTaskReq.Config) {
 		return
 	}
 
-	// Basic validation (mirroring frontend, but important for API robustness)
-	if len(newTaskReq.Config.Downloaders) == 0 {
-		http.Error(w, "Task must have at least one downloader", http.StatusBadRequest)
-		return
-	}
-	if len(newTaskReq.Config.Feeds) == 0 {
-		http.Error(w, "Task must have at least one feed", http.StatusBadRequest)
-		return
-	}
-	// Add more validation based on config.go logic if needed (e.g., interval > 0)
-
-	// Load current config to check for conflicts and merge
 	tasks, err := LoadYAMLConfig(cfgPath)
 	if err != nil {
-		slog.Error("API: Failed to load config data before creating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to load configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
-
 	if _, exists := tasks[newTaskReq.Name]; exists {
-		http.Error(w, fmt.Sprintf("Task with name '%s' already exists", newTaskReq.Name), http.StatusConflict)
+		sendError(w, fmt.Sprintf("Task with name '%s' already exists", newTaskReq.Name), http.StatusConflict)
 		return
 	}
-
-	// Add the new task
 	tasks[newTaskReq.Name] = newTaskReq.Config
-
-	// Save the updated config
 	if err := SaveYAMLConfig(cfgPath, tasks); err != nil {
-		slog.Error("API: Failed to save config data after creating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to save configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json") // Return the created task config
-	w.WriteHeader(http.StatusCreated)
-	// Encode the newly added task config back to the client
-	if err := json.NewEncoder(w).Encode(newTaskReq.Config); err != nil {
-		slog.Error("API: Failed to encode created task to JSON", "error", err, "taskName", newTaskReq.Name)
-		// If encoding fails after status created, log it but can't change response
-	}
+	sendJSONResponse(w, http.StatusCreated, newTaskReq.Config)
 }
 
 // getTaskByName retrieves a specific task configuration.
 func getTaskByName(w http.ResponseWriter, r *http.Request, cfgPath string, taskName string) {
 	tasks, err := LoadYAMLConfig(cfgPath)
 	if err != nil {
-		slog.Error("API: Failed to load config data", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to load configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
 
@@ -307,91 +315,55 @@ func getTaskByName(w http.ResponseWriter, r *http.Request, cfgPath string, taskN
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(task); err != nil {
-		slog.Error("API: Failed to encode task to JSON", "error", err, "taskName", taskName)
-	}
+	sendJSONResponse(w, http.StatusOK, task)
 }
 
 // updateTask updates an existing task configuration.
 func updateTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName string) {
 	var updatedConfig TaskConfig
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		slog.Error("API: Failed to read request body", "error", err)
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-
-	if err := json.Unmarshal(body, &updatedConfig); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid JSON format: %s", err), http.StatusBadRequest)
+	if !parseRequest(w, r, &updatedConfig) {
 		return
 	}
 
-	// Basic validation
-	if len(updatedConfig.Downloaders) == 0 {
-		http.Error(w, "Task must have at least one downloader", http.StatusBadRequest)
+	if !validateTaskRequest(w, taskName, updatedConfig) {
 		return
 	}
-	if len(updatedConfig.Feeds) == 0 {
-		http.Error(w, "Task must have at least one feed", http.StatusBadRequest)
-		return
-	}
-	// Add more validation as needed
 
-	// Load current config to ensure task exists and update it
 	tasks, err := LoadYAMLConfig(cfgPath)
 	if err != nil {
-		slog.Error("API: Failed to load config data before updating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to load configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
-
 	if _, exists := tasks[taskName]; !exists {
-		http.Error(w, fmt.Sprintf("Task '%s' not found", taskName), http.StatusNotFound)
+		sendError(w, fmt.Sprintf("Task '%s' not found", taskName), http.StatusNotFound)
 		return
 	}
-
-	// Update the task
 	tasks[taskName] = updatedConfig
-
-	// Save the updated config
 	if err := SaveYAMLConfig(cfgPath, tasks); err != nil {
-		slog.Error("API: Failed to save config data after updating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to save configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json") // Return the updated task config
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(updatedConfig); err != nil {
-		slog.Error("API: Failed to encode updated task to JSON", "error", err, "taskName", taskName)
-	}
+	sendJSONResponse(w, http.StatusOK, updatedConfig)
 }
 
 // deleteTask removes a task configuration.
 func deleteTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName string) {
 	tasks, err := LoadYAMLConfig(cfgPath)
 	if err != nil {
-		slog.Error("API: Failed to load config data before deleting task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to load configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
 
 	if _, exists := tasks[taskName]; !exists {
-		http.Error(w, fmt.Sprintf("Task '%s' not found", taskName), http.StatusNotFound)
+		sendError(w, fmt.Sprintf("Task '%s' not found", taskName), http.StatusNotFound)
 		return
 	}
 
-	// Delete the task
 	delete(tasks, taskName)
 
-	// Save the updated config
 	if err := SaveYAMLConfig(cfgPath, tasks); err != nil {
-		slog.Error("API: Failed to save config data after deleting task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		sendError(w, "Failed to save configuration", http.StatusInternalServerError, "error", err, "path", cfgPath)
 		return
 	}
 

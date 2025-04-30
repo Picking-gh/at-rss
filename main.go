@@ -77,7 +77,7 @@ func main() {
 		}
 
 		if opt.WebListenAddress != "" {
-			GetAllDownloaders(tasks)
+			getUniqueDownloaders(ctx, tasks)
 		}
 
 		for _, task := range tasks {
@@ -105,6 +105,21 @@ func main() {
 	} else {
 		slog.Info("Web server is disabled (web-listen address not provided).")
 	}
+	shutdownWebServer := func() {
+		if webServer != nil {
+			slog.Info("Stopping web server...")
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+
+			if err := webServer.Shutdown(shutdownCtx); err != nil {
+				slog.Error("Web server shutdown failed", "error", err)
+			} else {
+				slog.Info("Web server stopped.")
+			}
+			webServer = nil
+		}
+	}
+	defer shutdownWebServer()
 	// --- End Web Server Start ---
 
 	var debounceTimer *time.Timer
@@ -113,21 +128,7 @@ func main() {
 		select {
 		case <-stop:
 			slog.Info("Shutting down...")
-
-			// --- Graceful Shutdown for Web Server ---
-			if webServer != nil {
-				slog.Info("Stopping web server...")
-				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer shutdownCancel()
-
-				if err := webServer.Shutdown(shutdownCtx); err != nil {
-					slog.Error("Web server shutdown failed", "error", err)
-				} else {
-					slog.Info("Web server stopped.")
-				}
-			}
-			// --- End Graceful Shutdown ---
-
+			shutdownWebServer()
 			cancel()
 			wg.Wait()
 			slog.Info("All tasks stopped. Exiting.")
