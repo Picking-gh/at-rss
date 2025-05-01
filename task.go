@@ -9,10 +9,8 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"html"
 	"log/slog"
-	"strings"
 	"time"
 )
 
@@ -43,6 +41,7 @@ type DownloadStatus struct {
 	IsFinished  bool    `json:"isFinished"`
 	PercentDone float64 `json:"percentDone"`
 	Downloader  string  `json:"downloader"` // "aria2c" or "transmission"
+	RpcUrl      string  `json:"rpcUrl"`     // RPC endpoint URL
 }
 
 // RpcClient is the interface for both aria2c and transmission rpc clients.
@@ -188,10 +187,6 @@ func createRpcClientForConfig(ctx context.Context, cfg ParsedDownloaderConfig) (
 	case "aria2c":
 		// NewAria2c takes RpcUrl and Token
 		client, err = NewAria2c(ctx, cfg.RpcUrl, cfg.Token)
-		if err != nil && strings.Contains(cfg.RpcUrl, "ws://") || strings.Contains(cfg.RpcUrl, "wss://") {
-			// Provide a more specific error if it's a WebSocket URL, as we explicitly disallow it in config parsing
-			err = fmt.Errorf("aria2c WebSocket protocol is not supported: %w", err)
-		}
 	case "transmission":
 		// NewTransmission takes RpcUrl, Username, and Password
 		client, err = NewTransmission(ctx, cfg.RpcUrl, cfg.Username, cfg.Password)

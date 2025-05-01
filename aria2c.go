@@ -57,7 +57,7 @@ func NewAria2c(ctx context.Context, rpcUrl string, token string) (*Aria2c, error
 
 	// Basic validation if it looks like a URL (doesn't need full parsing now)
 	if !strings.HasPrefix(rpcUrl, "http://") && !strings.HasPrefix(rpcUrl, "https://") {
-		return nil, fmt.Errorf("invalid aria2c RPC URL scheme in %q: must be http or https", rpcUrl)
+		return nil, fmt.Errorf("invalid aria2c RPC URL scheme in %q: must be http or https (webSocket protocol is not supported yet)", rpcUrl)
 	}
 
 	client := &http.Client{
@@ -181,6 +181,7 @@ func (a *Aria2c) parseDownloadStatus(download map[string]any) DownloadStatus {
 		ID:          fmt.Sprintf("%v", download["gid"]),
 		Name:        fmt.Sprintf("%v", download["bittorrent"]), // TODO: parse name from bittorrent info
 		Downloader:  "aria2c",
+		RpcUrl:      a.rpcURL,
 		PercentDone: 0,
 	}
 

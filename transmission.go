@@ -219,6 +219,7 @@ func (t *Transmission) GetActiveDownloads() ([]DownloadStatus, error) {
 			ID:          fmt.Sprintf("%d", torrent.ID),
 			Name:        torrent.Name,
 			Downloader:  "transmission",
+			RpcUrl:      t.rpcURL,
 			IsFinished:  torrent.IsFinished,
 			PercentDone: torrent.PercentDone,
 		}
