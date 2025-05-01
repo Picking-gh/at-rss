@@ -22,24 +22,27 @@ type downloaderInfo struct {
 	TaskNames []string
 }
 
-type downloaderMap struct {
+// DownloaderGroup holds merged downloader information grouped by RPC URL.
+// The contents are initialized once and become immutable.
+type DownloaderGroup struct {
 	ctx context.Context
-	m   map[string]downloaderInfo
+	m   map[string]downloaderInfo // map of RPC URL to downloader info
 }
 
 var (
-	downloaders      downloaderMap
-	downloadersMutex sync.RWMutex
+	downloaderGroup *DownloaderGroup
 )
 
 // getUniqueDownloaders builds the global downloader map with information from tasks
-func getUniqueDownloaders(ctx context.Context, tasks []*Task) {
-	downloaders.ctx = ctx
-	downloaders.m = make(map[string]downloaderInfo)
+func getUniqueDownloaders(ctx context.Context, tasks []*Task) *DownloaderGroup {
+	downloaderGroup = &DownloaderGroup{
+		ctx: ctx,
+		m:   make(map[string]downloaderInfo),
+	}
 
 	for _, task := range tasks {
 		for _, dlConfig := range task.Downloaders {
-			info, exists := downloaders.m[dlConfig.RpcUrl]
+			info, exists := downloaderGroup.m[dlConfig.RpcUrl]
 			if !exists {
 				info = downloaderInfo{
 					dc:        dlConfig,
@@ -52,9 +55,162 @@ func getUniqueDownloaders(ctx context.Context, tasks []*Task) {
 					info.TaskNames = append(info.TaskNames, task.Name)
 				}
 			}
-			downloaders.m[dlConfig.RpcUrl] = info
+			downloaderGroup.m[dlConfig.RpcUrl] = info
 		}
 	}
+	return downloaderGroup
+}
+
+// --- Download Status Management ---
+
+// DownloadStatusPublisher manages download status subscriptions
+type DownloadStatusPublisher struct {
+	subscribers map[chan []DownloadStatus]struct{}
+	lastStatus  []DownloadStatus
+	rpcClients  map[string]RpcClient
+	active      bool
+	stopChan    chan struct{}
+	lastActive  time.Time
+	sync.RWMutex
+}
+
+func NewDownloadStatusPublisher() *DownloadStatusPublisher {
+	return &DownloadStatusPublisher{
+		subscribers: make(map[chan []DownloadStatus]struct{}),
+		rpcClients:  make(map[string]RpcClient),
+		stopChan:    make(chan struct{}),
+	}
+}
+
+func (p *DownloadStatusPublisher) Subscribe() chan []DownloadStatus {
+	p.Lock()
+	defer p.Unlock()
+
+	ch := make(chan []DownloadStatus, 1)
+	p.subscribers[ch] = struct{}{}
+	p.lastActive = time.Now()
+
+	// Start publisher if not active
+	if !p.active {
+		p.active = true
+		go p.run()
+	}
+
+	// Send initial status if available
+	if len(p.lastStatus) > 0 {
+		select {
+		case ch <- p.lastStatus:
+		default:
+			// Skip if initial status is not ready
+		}
+	}
+	return ch
+}
+
+func (p *DownloadStatusPublisher) Unsubscribe(ch chan []DownloadStatus) {
+	p.Lock()
+	defer p.Unlock()
+
+	delete(p.subscribers, ch)
+	close(ch)
+}
+
+func (p *DownloadStatusPublisher) Update(status []DownloadStatus) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.lastStatus = status
+	p.lastActive = time.Now()
+	for ch := range p.subscribers {
+		select {
+		case ch <- status:
+		default:
+			// Skip if subscriber is not ready
+		}
+	}
+}
+
+func (p *DownloadStatusPublisher) run() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	idleTimeout := 30 * time.Second
+
+	for {
+		select {
+		case <-ticker.C:
+			p.RLock()
+			subscriberCount := len(p.subscribers)
+			p.RUnlock()
+
+			if subscriberCount == 0 && time.Since(p.lastActive) > idleTimeout {
+				p.Lock()
+				p.active = false
+				// Close all RPC clients
+				for _, client := range p.rpcClients {
+					client.CloseRpc()
+				}
+				p.rpcClients = make(map[string]RpcClient)
+				p.Unlock()
+				return
+			}
+
+			for rpcUrl, info := range downloaderGroup.m {
+				p.Lock()
+				if _, exists := p.rpcClients[rpcUrl]; !exists {
+					client, err := createRpcClientForConfig(downloaderGroup.ctx, info.dc)
+					if err != nil {
+						slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
+						p.Unlock()
+						continue
+					}
+					p.rpcClients[rpcUrl] = client
+				}
+				client := p.rpcClients[rpcUrl]
+				p.Unlock()
+
+				status, err := client.GetActiveDownloads()
+				if err != nil {
+					slog.Error("Failed to get active downloads", "rpcUrl", rpcUrl, "error", err)
+					continue
+				}
+
+				if len(status) > 0 {
+					p.Update(status)
+				}
+			}
+
+		case <-p.stopChan:
+			return
+		case <-downloaderGroup.ctx.Done():
+			return
+		}
+	}
+}
+
+func (p *DownloadStatusPublisher) Stop() {
+	p.Lock()
+	defer p.Unlock()
+
+	if p.active {
+		close(p.stopChan)
+		p.active = false
+	}
+}
+
+var (
+	statusPublisher *DownloadStatusPublisher
+	publisherMutex  sync.Mutex
+)
+
+func getStatusPublisher() *DownloadStatusPublisher {
+	publisherMutex.Lock()
+	defer publisherMutex.Unlock()
+
+	if statusPublisher == nil {
+		statusPublisher = NewDownloadStatusPublisher()
+	}
+	return statusPublisher
 }
 
 // --- Helpers ---
@@ -115,14 +271,12 @@ func handleDownloaders() http.HandlerFunc {
 			return
 		}
 
-		downloadersMutex.RLock()
-		defer downloadersMutex.RUnlock()
-
-		// todo send more useful info rather than downloaders itself
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(downloaders); err != nil {
-			slog.Error("Failed to encode downloaders response", "error", err)
+		response := make(map[string][]string)
+		for rpcUrl, info := range downloaderGroup.m {
+			response[rpcUrl] = info.TaskNames
 		}
+
+		sendJSONResponse(w, http.StatusOK, response)
 	}
 }
 
@@ -134,68 +288,38 @@ func handleDownloads() http.HandlerFunc {
 			return
 		}
 
-		// Get RpcUrl from X-Rpc-Url header
-		rpcUrl := r.Header.Get("X-Rpc-Url")
-
-		rpcClients := make(map[string]RpcClient)
-		{
-			downloadersMutex.RLock()
-			defer downloadersMutex.RUnlock()
-			if rpcUrl != "" {
-				if info, exists := downloaders.m[rpcUrl]; exists {
-					client, err := createRpcClientForConfig(r.Context(), info.dc)
-					if err != nil {
-						slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
-					} else {
-						rpcClients[rpcUrl] = client
-					}
-				}
-			} else {
-				for rpcUrl, info := range downloaders.m {
-					client, err := createRpcClientForConfig(r.Context(), info.dc)
-					if err != nil {
-						slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
-					} else {
-						rpcClients[rpcUrl] = client
-					}
-				}
-			}
-		}
-		defer func() {
-			for _, client := range rpcClients {
-				client.CloseRpc()
-			}
-		}()
-
 		// Set SSE headers
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 
+		// Get requested RPC URL from header
+		rpcUrl := r.Header.Get("X-Rpc-Url")
+
+		// Subscribe to status updates
+		publisher := getStatusPublisher()
+		statusCh := publisher.Subscribe()
+		defer publisher.Unsubscribe(statusCh)
+
 		// Create a channel to detect client disconnection using context
 		clientGone := r.Context().Done()
 
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
 		for {
 			select {
-			case <-ticker.C:
-				var allStatus []DownloadStatus
-
-				// Get status for all downloaders
-				for rpcUrl, client := range rpcClients {
-					status, err := client.GetActiveDownloads()
-					if err != nil {
-						slog.Error("Failed to get active downloads", "rpcUrl", rpcUrl, "error", err)
-						continue
+			case status := <-statusCh:
+				// Filter status by RPC URL if specified
+				filteredStatus := status
+				if rpcUrl != "" {
+					filteredStatus = []DownloadStatus{}
+					for _, s := range status {
+						if s.RpcUrl == rpcUrl {
+							filteredStatus = append(filteredStatus, s)
+						}
 					}
-					allStatus = append(allStatus, status...)
 				}
 
-				// Send SSE event
-				if len(allStatus) > 0 {
-					data, err := json.Marshal(allStatus)
+				if len(filteredStatus) > 0 {
+					data, err := json.Marshal(filteredStatus)
 					if err != nil {
 						slog.Error("Failed to marshal download status", "error", err)
 						continue
@@ -210,7 +334,7 @@ func handleDownloads() http.HandlerFunc {
 				// Client disconnected
 				slog.Debug("Client disconnected from SSE stream")
 				return
-			case <-downloaders.ctx.Done():
+			case <-downloaderGroup.ctx.Done():
 				// Config file reloading...
 				slog.Debug("Config file reloading...Stop SSE stream")
 				return
