@@ -65,30 +65,42 @@ func getUniqueDownloaders(ctx context.Context, tasks []*Task) *DownloaderGroup {
 
 // DownloadStatusPublisher manages download status subscriptions
 type DownloadStatusPublisher struct {
-	subscribers map[chan []DownloadStatus]struct{}
-	lastStatus  []DownloadStatus
-	rpcClients  map[string]RpcClient
-	active      bool
-	stopChan    chan struct{}
-	lastActive  time.Time
+	subscribers   map[chan []DownloadStatus]struct{}
+	lastStatus    []DownloadStatus
+	rpcClients    map[string]RpcClient
+	rpcUrlCounter map[string]int // tracks active subscriptions per RPC URL
+	active        bool
+	stopChan      chan struct{}
+	lastActive    time.Time
 	sync.RWMutex
 }
 
 func NewDownloadStatusPublisher() *DownloadStatusPublisher {
 	return &DownloadStatusPublisher{
-		subscribers: make(map[chan []DownloadStatus]struct{}),
-		rpcClients:  make(map[string]RpcClient),
-		stopChan:    make(chan struct{}),
+		subscribers:   make(map[chan []DownloadStatus]struct{}),
+		rpcClients:    make(map[string]RpcClient),
+		rpcUrlCounter: make(map[string]int),
+		stopChan:      make(chan struct{}),
 	}
 }
 
-func (p *DownloadStatusPublisher) Subscribe() chan []DownloadStatus {
+func (p *DownloadStatusPublisher) Subscribe(rpcUrl string) chan []DownloadStatus {
 	p.Lock()
 	defer p.Unlock()
 
 	ch := make(chan []DownloadStatus, 1)
 	p.subscribers[ch] = struct{}{}
 	p.lastActive = time.Now()
+
+	// Update counter for RPC URLs
+	if rpcUrl != "" {
+		p.rpcUrlCounter[rpcUrl]++
+	} else {
+		// When rpcUrl is empty, increment all downloaders' counters
+		for url := range downloaderGroup.m {
+			p.rpcUrlCounter[url]++
+		}
+	}
 
 	// Start publisher if not active
 	if !p.active {
@@ -107,12 +119,34 @@ func (p *DownloadStatusPublisher) Subscribe() chan []DownloadStatus {
 	return ch
 }
 
-func (p *DownloadStatusPublisher) Unsubscribe(ch chan []DownloadStatus) {
+func (p *DownloadStatusPublisher) Unsubscribe(ch chan []DownloadStatus, rpcUrl string) {
 	p.Lock()
 	defer p.Unlock()
 
 	delete(p.subscribers, ch)
 	close(ch)
+
+	// Update counter for RPC URLs
+	if rpcUrl != "" {
+		if count, exists := p.rpcUrlCounter[rpcUrl]; exists {
+			if count <= 1 {
+				delete(p.rpcUrlCounter, rpcUrl)
+			} else {
+				p.rpcUrlCounter[rpcUrl]--
+			}
+		}
+	} else {
+		// When rpcUrl is empty, decrement all downloaders' counters
+		for url := range downloaderGroup.m {
+			if count, exists := p.rpcUrlCounter[url]; exists {
+				if count <= 1 {
+					delete(p.rpcUrlCounter, url)
+				} else {
+					p.rpcUrlCounter[url]--
+				}
+			}
+		}
+	}
 }
 
 func (p *DownloadStatusPublisher) Update(status []DownloadStatus) {
@@ -141,9 +175,10 @@ func (p *DownloadStatusPublisher) run() {
 		case <-ticker.C:
 			p.RLock()
 			subscriberCount := len(p.subscribers)
+			lastActive := p.lastActive
 			p.RUnlock()
 
-			if subscriberCount == 0 && time.Since(p.lastActive) > idleTimeout {
+			if subscriberCount == 0 && time.Since(lastActive) > idleTimeout {
 				p.Lock()
 				p.active = false
 				// Close all RPC clients
@@ -151,33 +186,59 @@ func (p *DownloadStatusPublisher) run() {
 					client.CloseRpc()
 				}
 				p.rpcClients = make(map[string]RpcClient)
+				p.rpcUrlCounter = make(map[string]int)
 				p.Unlock()
 				return
 			}
 
-			for rpcUrl, info := range downloaderGroup.m {
-				p.Lock()
+			// Process only RPC URLs with active subscriptions
+			p.RLock()
+			activeRpcUrls := make([]string, 0, len(p.rpcUrlCounter))
+			for rpcUrl := range p.rpcUrlCounter {
+				activeRpcUrls = append(activeRpcUrls, rpcUrl)
+			}
+			p.RUnlock()
+
+			// If no active RPC URLs, skip processing
+			if len(activeRpcUrls) == 0 {
+				continue
+			}
+
+			// Prepare clients first (serial)
+			clients := make(map[string]RpcClient, len(activeRpcUrls))
+			p.Lock()
+			for _, rpcUrl := range activeRpcUrls {
+				info, exists := downloaderGroup.m[rpcUrl]
+				if !exists {
+					continue
+				}
+
+				// Create client if not exists
 				if _, exists := p.rpcClients[rpcUrl]; !exists {
 					client, err := createRpcClientForConfig(downloaderGroup.ctx, info.dc)
 					if err != nil {
 						slog.Error("Failed to create RPC client", "rpcUrl", rpcUrl, "error", err)
-						p.Unlock()
 						continue
 					}
 					p.rpcClients[rpcUrl] = client
 				}
-				client := p.rpcClients[rpcUrl]
-				p.Unlock()
+				clients[rpcUrl] = p.rpcClients[rpcUrl]
+			}
+			p.Unlock()
 
-				status, err := client.GetActiveDownloads()
-				if err != nil {
-					slog.Error("Failed to get active downloads", "rpcUrl", rpcUrl, "error", err)
-					continue
-				}
+			// Process downloads in parallel
+			for rpcUrl, client := range clients {
+				go func(url string, c RpcClient) {
+					status, err := c.GetActiveDownloads()
+					if err != nil {
+						slog.Error("Failed to get active downloads", "rpcUrl", url, "error", err)
+						return
+					}
 
-				if len(status) > 0 {
-					p.Update(status)
-				}
+					if len(status) > 0 {
+						p.Update(status)
+					}
+				}(rpcUrl, client)
 			}
 
 		case <-p.stopChan:
@@ -296,10 +357,19 @@ func handleDownloads() http.HandlerFunc {
 		// Get requested RPC URL from header
 		rpcUrl := r.Header.Get("X-Rpc-Url")
 
+		// Validate RPC URL if specified
+		if rpcUrl != "" {
+			if _, exists := downloaderGroup.m[rpcUrl]; !exists {
+				slog.Error("Invalid RPC URL requested", "rpcUrl", rpcUrl)
+				sendError(w, "Invalid RPC URL specified", http.StatusBadRequest)
+				return
+			}
+		}
+
 		// Subscribe to status updates
 		publisher := getStatusPublisher()
-		statusCh := publisher.Subscribe()
-		defer publisher.Unsubscribe(statusCh)
+		statusCh := publisher.Subscribe(rpcUrl)
+		defer publisher.Unsubscribe(statusCh, rpcUrl)
 
 		// Create a channel to detect client disconnection using context
 		clientGone := r.Context().Done()
