@@ -9,7 +9,16 @@
   let { extracter = null, update }: Props = $props();
 
   // --- Local State ---
-  let internalExtracter: ExtracterConfig = $state(extracter ? extracter : {});
+  let internalExtracter: ExtracterConfig = $state({});
+  
+  // Update internal state when prop changes
+  $effect(() => {
+    if (extracter) {
+      internalExtracter = extracter;
+    } else {
+      internalExtracter = {};
+    }
+  });
 
   // --- Event Handlers ---
   function handleInputChange() {
@@ -28,9 +37,9 @@
 </script>
 
 <div class="form-section">
-  <h3>Extracter (CSS Selectors)</h3>
   {#if extracter === null || extracter === undefined}
-    <button type="button" class="button secondary-button" onclick={addExtracterSection}> Add Extracter Section </button>
+    <p class="empty-list-message">No extracter sections configured.</p>
+    <button type="button" class="button secondary-button add-item-button" onclick={addExtracterSection}> Add Extracter Section </button>
   {:else}
     <div class="form-group">
       <label for="extracter-tag">Tag</label>
@@ -54,7 +63,6 @@
       />
     </div>
 
-    <!-- Remove Section Button -->
     <div class="section-actions">
       <button type="button" class="button danger-button" onclick={removeExtracterSection}> Remove Extracter Section </button>
     </div>

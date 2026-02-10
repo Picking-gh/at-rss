@@ -5,14 +5,24 @@
 
   interface Props {
     filter?: FilterConfig | null | undefined; // The filter configuration object
+    type?: "include" | "exclude"; // Which type of filter to show
     update?: any;
   }
 
-  let { filter = null, update }: Props = $props();
+  let { filter = null, type = "include", update }: Props = $props();
 
   // --- Local State ---
-  // Use derived state or direct binding if possible, but for complex objects, local copy might be easier
-  let internalFilter: FilterConfig = $state(filter ? filter : { include: [], exclude: [] });
+  // Initialize with empty filter, update when prop changes
+  let internalFilter: FilterConfig = $state({ include: [], exclude: [] });
+
+  // Update internal state when prop changes
+  $effect(() => {
+    if (filter) {
+      internalFilter = filter;
+    } else {
+      internalFilter = { include: [], exclude: [] };
+    }
+  });
 
   // --- Modal State ---
   let showKeywordModal = $state(false);
@@ -23,12 +33,21 @@
 
   // --- Event Handlers ---
   function notifyUpdate() {
-    // Ensure include/exclude are always arrays, even if empty
-    const updatedFilter: FilterConfig = {
-      include: internalFilter.include || [],
-      exclude: internalFilter.exclude || [],
-    };
-    update(updatedFilter);
+    // Check if both include and exclude arrays are empty
+    const includeEmpty = !internalFilter.include || internalFilter.include.length === 0;
+    const excludeEmpty = !internalFilter.exclude || internalFilter.exclude.length === 0;
+    
+    if (includeEmpty && excludeEmpty) {
+      // Both arrays are empty, set filter to null
+      update(null);
+    } else {
+      // At least one array has content, create filter object
+      const updatedFilter: FilterConfig = {
+        include: internalFilter.include || [],
+        exclude: internalFilter.exclude || [],
+      };
+      update(updatedFilter);
+    }
   }
 
   function openAddKeywordModal(type: "include" | "exclude") {
@@ -94,18 +113,9 @@
     }
   }
 
-  function addFilterSection() {
-    update({ include: [], exclude: [] });
-  }
 
-  function removeFilterSection() {
-    if (confirm("Are you sure you want to remove the entire filter section?")) {
-      update(null);
-    }
-  }
 </script>
 
-<!-- Keyword Add/Edit Modal -->
 <Modal bind:showModal={showKeywordModal} title={modalTitle} close={() => (showKeywordModal = false)}>
   {#snippet body()}
     <div class="form-group">
@@ -120,47 +130,18 @@
 </Modal>
 
 <div class="form-section">
-  <h3>Filter</h3>
-  {#if filter === null || filter === undefined}
-    <button type="button" class="button secondary-button" onclick={addFilterSection}> Add Filter Section </button>
+  {#if internalFilter[type] && internalFilter[type].length > 0}
+    <ul class="list-items keyword-list">
+      {#each internalFilter[type] as keyword, index (index)}
+        <ListItem item={keyword} {index} draggable={false} edit={() => openEditKeywordModal(type, index)} del={() => deleteKeyword(type, index)}>
+          {keyword}
+        </ListItem>
+      {/each}
+    </ul>
   {:else}
-    <!-- Include Keywords List -->
-    <div class="form-subsection">
-      <h4>Include Keywords</h4>
-      {#if internalFilter.include && internalFilter.include.length > 0}
-        <ul class="list-items keyword-list">
-          {#each internalFilter.include as keyword, index (index)}
-            <ListItem item={keyword} {index} draggable={false} edit={() => openEditKeywordModal("include", index)} del={() => deleteKeyword("include", index)}>
-              {keyword}
-            </ListItem>
-          {/each}
-        </ul>
-      {:else}
-        <p class="empty-list-message">No include keywords.</p>
-      {/if}
-      <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal("include")}> Add Include Keyword </button>
-    </div>
-
-    <!-- Exclude Keywords List -->
-    <div class="form-subsection">
-      <h4>Exclude Keywords</h4>
-      {#if internalFilter.exclude && internalFilter.exclude.length > 0}
-        <ul class="list-items keyword-list">
-          {#each internalFilter.exclude as keyword, index (index)}
-            <ListItem item={keyword} {index} draggable={false} edit={() => openEditKeywordModal("exclude", index)} del={() => deleteKeyword("exclude", index)}>
-              {keyword}
-            </ListItem>
-          {/each}
-        </ul>
-      {:else}
-        <p class="empty-list-message">No exclude keywords.</p>
-      {/if}
-      <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal("exclude")}> Add Exclude Keyword </button>
-    </div>
-
-    <!-- Remove Section Button -->
-    <div class="section-actions">
-      <button type="button" class="button danger-button" onclick={removeFilterSection}> Remove Filter Section </button>
-    </div>
+    <p class="empty-list-message">No {type} keywords.</p>
   {/if}
+  <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal(type)}>
+    Add {type === "include" ? "Include" : "Exclude"} Keyword
+  </button>
 </div>

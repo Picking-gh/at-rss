@@ -104,7 +104,6 @@
   }
 </script>
 
-<!-- Feed Add/Edit Modal -->
 <Modal bind:showModal={showFeedModal} title={modalTitle} close={() => (showFeedModal = false)}>
   {#snippet body()}
     <div class="form-group">
@@ -119,7 +118,6 @@
 </Modal>
 
 <div class="form-section">
-  <h3>Feeds</h3>
   <div class="list-section">
     {#if feeds && feeds.length > 0}
       <ul class="list-items" id="feed-list">

@@ -7,12 +7,22 @@
   import type { FilterConfig } from "../types";
   import type { ExtracterConfig } from "../types";
 
+  interface TaskConfig {
+    interval?: number | null;
+    downloaders?: DownloaderConfig[];
+    feeds?: string[];
+    filter?: FilterConfig | null;
+    extracter?: ExtracterConfig | null;
+    isNew?: boolean;
+    isModified?: boolean;
+  }
+
   interface Props {
-    taskConfig: any; // The configuration object for the selected task
+    taskConfig: TaskConfig; // The configuration object for the selected task
     taskName: string; // The name of the selected task
     isNew?: boolean; // Flag indicating if it's a new task form
     apiFetch: (url: string, options?: RequestInit) => Promise<any>;
-    onTaskModified?: (modifiedTask: { taskName: string; taskConfig: any; isModified: boolean }) => void;
+    onTaskModified?: (modifiedTask: { taskName: string; taskConfig: TaskConfig; isModified: boolean }) => void;
     onTaskSaved?: (taskName: string) => void;
     onTaskDeleted?: (taskName: string) => void;
     onNewTaskCanceled?: (taskName: string) => void;
@@ -20,7 +30,29 @@
 
   let { taskConfig, taskName, isNew = false, apiFetch, onTaskModified, onTaskSaved, onTaskDeleted, onNewTaskCanceled }: Props = $props();
 
-  let internalTaskConfig = $state(taskConfig); // Deep copy to avoid modifying original object directly
+  let internalTaskConfig: TaskConfig = $state({
+    interval: null,
+    downloaders: [],
+    feeds: [],
+    filter: null,
+    extracter: null,
+    isNew: false,
+    isModified: false
+  });
+  
+  // Update internal state when prop changes
+  $effect(() => {
+    // Ensure taskConfig has all required properties
+    internalTaskConfig = {
+      interval: taskConfig?.interval ?? null,
+      downloaders: taskConfig?.downloaders ?? [],
+      feeds: taskConfig?.feeds ?? [],
+      filter: taskConfig?.filter ?? null,
+      extracter: taskConfig?.extracter ?? null,
+      isNew: taskConfig?.isNew ?? false,
+      isModified: taskConfig?.isModified ?? false
+    };
+  });
 
   // --- Event Handlers ---
 
@@ -28,7 +60,7 @@
     onTaskModified?.({ taskName: taskName, taskConfig: internalTaskConfig, isModified: true });
   }
 
-  function handleDownloaderUpdate(data: DownloaderConfig) {
+  function handleDownloaderUpdate(data: DownloaderConfig[]) {
     internalTaskConfig.downloaders = data;
     handleInputChange();
   }
@@ -76,52 +108,89 @@
     }
   }
 
-  // Reset internal state
-  $effect(() => {
-    internalTaskConfig = taskConfig;
-  });
-</script>
+
+
+   // Tab state
+   let activeTab = $state('downloaders');
+   
+   function setActiveTab(tab: string) {
+     activeTab = tab;
+   }
+ </script>
 
 <div id="task-form-container" class="task-detail-container">
-  <form onsubmit={handleSave}>
-    <!-- Basic Info Section -->
-    <div class="form-section">
-      <h3>Basic Info</h3>
-      <div class="form-group">
-        <label for="taskNameInput">Task Name</label>
-        <input type="text" id="taskNameInput" value={taskName} readonly style="background-color: #eee;" />
+  <form onsubmit={handleSave} class="tab-container">
+    <div class="tab-header">
+      <button type="button" class:active={activeTab === 'downloaders'} class="tab-button" onclick={() => setActiveTab('downloaders')}>
+        Downloaders
+      </button>
+      <button type="button" class:active={activeTab === 'feeds'} class="tab-button" onclick={() => setActiveTab('feeds')}>
+        Feeds
+      </button>
+      <button type="button" class:active={activeTab === 'include'} class="tab-button" onclick={() => setActiveTab('include')}>
+        Include
+      </button>
+      <button type="button" class:active={activeTab === 'exclude'} class="tab-button" onclick={() => setActiveTab('exclude')}>
+        Exclude
+      </button>
+      <button type="button" class:active={activeTab === 'extracter'} class="tab-button" onclick={() => setActiveTab('extracter')}>
+        Extracter
+      </button>
+    </div>
+
+    <div class="tab-content">
+      <div class:active={activeTab === 'downloaders'} class="tab-pane" data-tab-title="Downloaders">
+        <div class="tab-form-section">
+          <DownloaderSection downloaders={internalTaskConfig.downloaders} update={handleDownloaderUpdate} />
+        </div>
       </div>
-      <div class="form-group">
-        <label for="interval">Fetch Interval (minutes)</label>
-        <input type="number" id="interval" bind:value={internalTaskConfig.interval} min="1" placeholder="e.g., 10" oninput={handleInputChange} />
+
+      <div class:active={activeTab === 'feeds'} class="tab-pane" data-tab-title="Feeds">
+        <div class="tab-form-section">
+          <FeedSection feeds={internalTaskConfig.feeds} update={handleFeedUpdate} />
+        </div>
+      </div>
+
+      <div class:active={activeTab === 'include'} class="tab-pane" data-tab-title="Include Filters">
+        <div class="tab-form-section">
+          <FilterSection filter={internalTaskConfig.filter} type="include" update={handleFilterUpdate} />
+        </div>
+      </div>
+
+      <div class:active={activeTab === 'exclude'} class="tab-pane" data-tab-title="Exclude Filters">
+        <div class="tab-form-section">
+          <FilterSection filter={internalTaskConfig.filter} type="exclude" update={handleFilterUpdate} />
+        </div>
+      </div>
+
+      <div class:active={activeTab === 'extracter'} class="tab-pane" data-tab-title="Extracter">
+        <div class="tab-form-section">
+          <ExtracterSection extracter={internalTaskConfig.extracter} update={handleExtracterUpdate} />
+        </div>
       </div>
     </div>
 
-    <!-- Downloader List Section -->
-    <DownloaderSection downloaders={internalTaskConfig.downloaders} update={handleDownloaderUpdate} />
-
-    <!-- Feed List Section -->
-    <FeedSection feeds={internalTaskConfig.feeds} update={handleFeedUpdate} />
-
-    <!-- Filter Section -->
-    <FilterSection filter={internalTaskConfig.filter} update={handleFilterUpdate} />
-
-    <!-- Extracter Section -->
-    <ExtracterSection extracter={internalTaskConfig.extracter} update={handleExtracterUpdate} />
-
-    <!-- Action Buttons -->
-    <div class="action-buttons">
-      {#if taskConfig?.isModified || isNew}
-        <button type="submit" class="button primary-button">
-          {isNew ? "Create Task" : "Save Changes"}
-        </button>
-      {/if}
-      {#if !isNew}
-        <button type="button" class="button danger-button" onclick={handleDelete}> Delete Task </button>
-      {/if}
-      {#if isNew}
-        <button type="button" class="button secondary-button" onclick={() => onNewTaskCanceled?.(taskName)}> Cancel </button>
-      {/if}
+    <div class="bottom-action-bar">
+      <div class="bottom-action-left">
+        <div class="interval-control">
+          <label for="interval">Interval (minutes):</label>
+          <input type="number" id="interval" bind:value={internalTaskConfig.interval} min="1" placeholder="10" oninput={handleInputChange} />
+        </div>
+      </div>
+      <div class="bottom-action-spacer"></div>
+      <div class="bottom-action-right">
+        {#if taskConfig?.isModified || isNew}
+          <button type="submit" class="button primary-button">
+            {isNew ? "Create Task" : "Save Changes"}
+          </button>
+        {/if}
+        {#if !isNew}
+          <button type="button" class="button danger-button" onclick={handleDelete}> Delete Task </button>
+        {/if}
+        {#if isNew}
+          <button type="button" class="button secondary-button" onclick={() => onNewTaskCanceled?.(taskName)}> Cancel </button>
+        {/if}
+      </div>
     </div>
   </form>
 </div>

@@ -62,11 +62,14 @@
   function openEditModal(index: number) {
     modalTitle = "Edit Downloader";
     // Make a deep copy to avoid modifying the original array directly during editing
-    currentDownloaderData = downloaders[index];
-    // Ensure all potential fields exist, even if undefined in original data
-    currentDownloaderData = { ...defaultDownloader, ...currentDownloaderData };
-    editingDownloaderIndex = index;
-    showDownloaderModal = true;
+    // Ensure downloaders exists and has the index
+    if (downloaders && index >= 0 && index < downloaders.length) {
+      currentDownloaderData = downloaders[index];
+      // Ensure all potential fields exist, even if undefined in original data
+      currentDownloaderData = { ...defaultDownloader, ...currentDownloaderData };
+      editingDownloaderIndex = index;
+      showDownloaderModal = true;
+    }
   }
 
   function saveDownloader(event: Event) {
@@ -101,13 +104,15 @@
     dataToSave.autoCleanUp = dataToSave.autoCleanUp || false;
 
     let updatedDownloaders: DownloaderConfig[]; // Use the interface
+    const safeDownloaders = Array.isArray(downloaders) ? downloaders : [];
+    
     if (editingDownloaderIndex !== null) {
       // Editing existing
-      updatedDownloaders = [...downloaders];
+      updatedDownloaders = [...safeDownloaders];
       updatedDownloaders[editingDownloaderIndex] = dataToSave;
     } else {
       // Adding new
-      updatedDownloaders = [...downloaders, dataToSave];
+      updatedDownloaders = [...safeDownloaders, dataToSave];
     }
     update(updatedDownloaders);
     showDownloaderModal = false;
@@ -116,7 +121,8 @@
   function handleDelete(index: number) {
     if (confirm(`Are you sure you want to delete downloader #${index + 1}?`)) {
       // Create a new array without the deleted item
-      const updatedDownloaders = downloaders.filter((_, i) => i !== index);
+      const safeDownloaders = Array.isArray(downloaders) ? downloaders : [];
+      const updatedDownloaders = safeDownloaders.filter((_, i) => i !== index);
       // Notify the parent component of the change
       update(updatedDownloaders);
     }
@@ -143,8 +149,14 @@
       return;
     }
 
-    const draggedItem = downloaders[dragStartIndex];
-    const remainingItems = downloaders.filter((_, i) => i !== dragStartIndex);
+    const safeDownloaders = Array.isArray(downloaders) ? downloaders : [];
+    if (dragStartIndex < 0 || dragStartIndex >= safeDownloaders.length) {
+      dragStartIndex = null;
+      return;
+    }
+
+    const draggedItem = safeDownloaders[dragStartIndex];
+    const remainingItems = safeDownloaders.filter((_, i) => i !== dragStartIndex);
     const reorderedDownloaders = [...remainingItems.slice(0, dropIndex), draggedItem, ...remainingItems.slice(dropIndex)];
 
     update(reorderedDownloaders);
@@ -157,7 +169,6 @@
   }
 </script>
 
-<!-- Downloader Add/Edit Modal -->
 <Modal bind:showModal={showDownloaderModal} title={modalTitle} close={() => (showDownloaderModal = false)}>
   {#snippet body()}
     <form class="modal-form" onsubmit={saveDownloader}>
@@ -215,7 +226,6 @@
         <input type="checkbox" id="downloader-autoCleanUp" bind:checked={currentDownloaderData.autoCleanUp} />
         <label for="downloader-autoCleanUp">Auto CleanUp</label>
       </div>
-      <!-- Hidden submit button to allow Enter key submission -->
       <button type="submit" style="display: none;" aria-hidden="true"></button>
     </form>
   {/snippet}
@@ -228,7 +238,6 @@
 </Modal>
 
 <div class="form-section">
-  <h3>Downloaders</h3>
   <div class="list-section">
     {#if downloaders && downloaders.length > 0}
       <ul class="list-items" id="downloader-list">

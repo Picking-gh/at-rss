@@ -81,10 +81,10 @@
   ondragend={handleDragEnd}
   class:drag-over={draggable && isDraggedOver}
 >
+  {#if draggable}
+    <span class="drag-handle">::</span>
+  {/if}
   <span class="item-content">
-    {#if draggable}
-      <span class="drag-handle">::</span>
-    {/if}
     {#if children}{@render children()}{:else}{item}{/if}
   </span>
 
@@ -98,56 +98,3 @@
   </div>
 </li>
 
-<style>
-  .list-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 10px;
-    margin-bottom: 5px;
-    background-color: #f8f9fa;
-    border: 1px solid #eee;
-    border-radius: 4px;
-    word-break: break-all;
-  }
-
-  .list-item:last-child {
-    border-bottom: none;
-  }
-
-  .item-content {
-    flex-grow: 1;
-    margin-right: 1rem;
-  }
-
-  .list-item-actions {
-    display: flex;
-  }
-
-  .icon-button {
-    margin-left: 8px;
-    padding: 3px 3px;
-    font-size: 0.85em;
-    line-height: 1;
-  }
-
-  .drag-handle {
-    cursor: grab;
-    margin-right: 0.5rem;
-    color: #aaa;
-    display: inline-block;
-    user-select: none;
-  }
-
-  .draggable-item {
-    cursor: move;
-  }
-
-  .draggable-item:active .drag-handle {
-    cursor: grabbing;
-  }
-
-  .drag-over {
-    border-top: 2px solid #007bff;
-  }
-</style>
