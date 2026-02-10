@@ -51,4 +51,5 @@ dist-ssr
 
 # this project
 at-rss
+at-rss.conf
 build/

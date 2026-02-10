@@ -1,0 +1,113 @@
+# at-rrs configuration is in YAML format.
+
+# The file contains several tasks labeled with names like feed1, feed2, etc.
+# These names are for display purposes only and are not parsed.
+
+# Each task must provide:
+# 1. At least one downloader
+# 2. At least one feed URL
+
+# Downloaders configuration:
+# - The 'downloaders' section is a list that allows specifying one or more clients
+# - When adding a torrent, the app will try each downloader in order until success
+# - Each downloader must specify a 'type': 'aria2c' or 'transmission'
+#
+# For 'aria2c' downloader:
+# - Required: host, port, rpcPath
+# - Optional: token, useHttps (default: false)
+# - Defaults: host=localhost, port=6800, rpcPath=/jsonrpc
+#
+# For 'transmission' downloader:
+# - Required: host, port, rpcPath
+# - Optional: username, password, useHttps (default: false)
+# - Defaults: host=localhost, port=9091, rpcPath=/transmission/rpc
+#
+# Note: For numeric values like 'port', DO NOT enclose the number in quotes.
+
+# Feeds configuration:
+# - The 'feeds' key accepts either a single URL string or a list of URLs
+# - Torrents will be extracted from each feed URL sequentially
+# - This allows feed aggregation (different content) or alternative feeds (same content)
+
+# Filter configuration (optional):
+# - Contains 'include' and 'exclude' keywords applied to the 'title' element
+# - 'include' filter:
+#   * Multiple strings represent OR relationship
+#   * Comma-separated values within a string represent AND relationship
+#   * Empty 'include' allows all items
+# - 'exclude' filter:
+#   * Multiple strings represent OR relationship
+#   * Comma-separated values within a string represent AND relationship
+#   * Exclusions take priority over inclusions
+# - Recommendation: Enclose each line of keywords in double quotes
+
+# Extractor configuration (optional):
+# - Used to extract hashInfo string from specified 'tag' to construct magnet link
+# - Valid tags: 'title', 'link', 'description', 'enclosure', 'guid'
+# - Requires both 'tag' and 'pattern' to be specified
+# - If not provided, will download URL from 'enclosure' element
+
+# Interval configuration (optional):
+# - Specifies feed fetch frequency in minutes
+# - Default: 10 minutes if not specified or invalid
+# - Must be a positive integer
+
+# Note: All feeds within a task share the same filter, extracter and interval settings.
+# For different processing needs, create separate tasks.
+
+# Example 1: Task using a single Aria2c downloader with custom settings and filters.
+Example1:
+  downloaders:
+  - type: aria2c
+    host: "aria2.example.com"
+    port: 6800
+    rpcPath: "/jsonrpc"
+    token: "your_aria2c_secret_token"
+    useHttps: true
+    autoCleanUp: true
+  feeds:
+  - http://example.com/feed1
+  - http://example.com/feed11
+  filter:
+    include:
+    - "keyword1, keyword2" # AND relationship within the string
+    - "keyword3"           # OR relationship between strings
+    exclude:
+    - "undesired"
+  extracter:
+    tag: link # Extract magnet link from the 'link' tag
+    pattern: "(?:[2-7A-Z]{32}|[0-9a-f]{40})" # Example pattern to extract both 32byte and 40byte hashinfo string
+  interval: 15 # Fetch every 15 minutes
+
+# Example 2: Task using a single Transmission downloader with authentication.
+Example2:
+  downloaders:
+  - type: transmission
+    host: "192.168.1.100"
+    port: 9091
+    rpcPath: "/transmission/rpc"
+    username: "transmission_user"
+    password: "transmission_password"
+    useHttps: false
+  feeds: http://example.com/feed2
+  interval: 30 # Fetch every 30 minutes
+
+# Example 3: Task using multiple downloaders as fallback.
+Example3:
+  downloaders:
+  - type: aria2c # First attempt: Aria2c (using defaults)
+  - type: transmission # Second attempt: Transmission (using defaults)
+    host: "nas.local" # Override default host for transmission
+  feeds: http://example.com/feed3
+
+# Example 4: Task using two Aria2c instances with different settings
+Example4:
+  downloaders:
+  - type: aria2c # Local instance
+    host: "localhost"
+    token: "local_token"
+  - type: aria2c # Remote instance
+    host: "remote.server"
+    port: 6801
+    useHttps: true
+  feeds: http://example.com/feed4
