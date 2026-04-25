@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
-	"strings"
 	"time"
 )
 
@@ -85,12 +84,18 @@ func (t *Task) fetchTorrents(cache *Cache, ignoreProcessed bool) {
 }
 
 // doFetchTorrents contains the actual fetch logic, attempting downloaders sequentially.
+// Returns an error if all feeds failed to fetch, so the caller can retry transient network issues.
 func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 
 	infoHashSet := t.getAllInfoHashes(cache)
+	feedsProcessed := 0
+	var lastFeedErr error
+
 	for _, feedUrl := range t.FeedUrls {
 		parser := NewFeedParser(t.ctx, feedUrl, t.parserConfig)
 		if parser == nil {
+			lastFeedErr = fmt.Errorf("failed to fetch feed: %s", feedUrl)
+			slog.Warn("Skipping feed due to fetch error", "url", feedUrl)
 			continue
 		}
 		var processedItems map[string][]string
@@ -121,35 +126,39 @@ func (t *Task) doFetchTorrents(cache *Cache, ignoreProcessed bool) error {
 				}
 
 				err = client.AddTorrent(torrent.URL)
-				client.CloseRpc() // Close connection regardless of cleanup
+				client.CloseRpc()
 
 				if err == nil {
 					slog.Info("Successfully added torrent", "URL", torrent.URL, "downloader_type", dlConfig.RpcType)
 					added = true
 					infoHashSet.add(torrent.InfoHashes)
 					newItems[guid] = torrent.InfoHashes
-					break // Success, move to the next torrent item
+					break
 				} else {
 					slog.Warn("Failed to add torrent with downloader",
 						"URL", torrent.URL,
 						"downloader_type", dlConfig.RpcType,
 						"error", err)
-					lastAddErr = err // Keep track of the last error
+					lastAddErr = err
 				}
 			}
 
 			if !added {
-				// Mark item as unprocessed if all downloaders failed
 				slog.Error("Failed to add torrent with all downloaders",
 					"URL", torrent.URL,
-					"last_error", lastAddErr) // Log the last encountered error
+					"last_error", lastAddErr)
 				delete(newItems, guid)
 			}
 		}
 		parser.RemoveExpiredItems(cache)
 		cache.Set(feedUrl, newItems, false)
+		feedsProcessed++
 	}
 	cache.Flush()
+
+	if feedsProcessed == 0 && len(t.FeedUrls) > 0 {
+		return fmt.Errorf("all %d feed(s) failed to fetch, last error: %w", len(t.FeedUrls), lastFeedErr)
+	}
 	return nil
 }
 
@@ -174,12 +183,7 @@ func createRpcClientForConfig(ctx context.Context, cfg ParsedDownloaderConfig) (
 
 	switch cfg.RpcType {
 	case "aria2c":
-		// NewAria2c takes RpcUrl and Token
 		client, err = NewAria2c(ctx, cfg.RpcUrl, cfg.Token)
-		if err != nil && strings.Contains(cfg.RpcUrl, "ws://") || strings.Contains(cfg.RpcUrl, "wss://") {
-			// Provide a more specific error if it's a WebSocket URL, as we explicitly disallow it in config parsing
-			err = fmt.Errorf("aria2c WebSocket protocol is not supported: %w", err)
-		}
 	case "transmission":
 		// NewTransmission takes RpcUrl, Username, and Password
 		client, err = NewTransmission(ctx, cfg.RpcUrl, cfg.Username, cfg.Password)

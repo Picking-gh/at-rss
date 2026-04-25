@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // --- HTTP Handler Factories ---
@@ -105,37 +106,28 @@ func createTask(w http.ResponseWriter, r *http.Request, cfgPath string) {
 		http.Error(w, "Task must have at least one feed", http.StatusBadRequest)
 		return
 	}
-	// Add more validation based on config.go logic if needed (e.g., interval > 0)
 
-	// Load current config to check for conflicts and merge
-	tasks, err := LoadYAMLConfig(cfgPath)
+	err = ModifyYAMLConfig(cfgPath, func(tasks map[string]TaskConfig) (map[string]TaskConfig, error) {
+		if _, exists := tasks[newTaskReq.Name]; exists {
+			return nil, fmt.Errorf("task with name '%s' already exists", newTaskReq.Name)
+		}
+		tasks[newTaskReq.Name] = newTaskReq.Config
+		return tasks, nil
+	})
 	if err != nil {
-		slog.Error("API: Failed to load config data before creating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+		if strings.Contains(err.Error(), "already exists") {
+			http.Error(w, err.Error(), http.StatusConflict)
+		} else {
+			slog.Error("API: Failed to create task", "error", err, "path", cfgPath)
+			http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		}
 		return
 	}
 
-	if _, exists := tasks[newTaskReq.Name]; exists {
-		http.Error(w, fmt.Sprintf("Task with name '%s' already exists", newTaskReq.Name), http.StatusConflict)
-		return
-	}
-
-	// Add the new task
-	tasks[newTaskReq.Name] = newTaskReq.Config
-
-	// Save the updated config
-	if err := SaveYAMLConfig(cfgPath, tasks); err != nil {
-		slog.Error("API: Failed to save config data after creating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json") // Return the created task config
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	// Encode the newly added task config back to the client
 	if err := json.NewEncoder(w).Encode(newTaskReq.Config); err != nil {
 		slog.Error("API: Failed to encode created task to JSON", "error", err, "taskName", newTaskReq.Name)
-		// If encoding fails after status created, log it but can't change response
 	}
 }
 
@@ -186,32 +178,44 @@ func updateTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName
 		http.Error(w, "Task must have at least one feed", http.StatusBadRequest)
 		return
 	}
-	// Add more validation as needed
 
-	// Load current config to ensure task exists and update it
-	tasks, err := LoadYAMLConfig(cfgPath)
+	err = ModifyYAMLConfig(cfgPath, func(tasks map[string]TaskConfig) (map[string]TaskConfig, error) {
+		existingConfig, exists := tasks[taskName]
+		if !exists {
+			return nil, fmt.Errorf("task '%s' not found", taskName)
+		}
+
+		// Preserve sensitive credentials from existing config when incoming values are empty
+		for i := range updatedConfig.Downloaders {
+			dl := &updatedConfig.Downloaders[i]
+			if i < len(existingConfig.Downloaders) {
+				existing := existingConfig.Downloaders[i]
+				if dl.Token == "" {
+					dl.Token = existing.Token
+				}
+				if dl.Username == "" {
+					dl.Username = existing.Username
+				}
+				if dl.Password == "" {
+					dl.Password = existing.Password
+				}
+			}
+		}
+
+		tasks[taskName] = updatedConfig
+		return tasks, nil
+	})
 	if err != nil {
-		slog.Error("API: Failed to load config data before updating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			slog.Error("API: Failed to update task", "error", err, "path", cfgPath)
+			http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		}
 		return
 	}
 
-	if _, exists := tasks[taskName]; !exists {
-		http.Error(w, fmt.Sprintf("Task '%s' not found", taskName), http.StatusNotFound)
-		return
-	}
-
-	// Update the task
-	tasks[taskName] = updatedConfig
-
-	// Save the updated config
-	if err := SaveYAMLConfig(cfgPath, tasks); err != nil {
-		slog.Error("API: Failed to save config data after updating task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json") // Return the updated task config
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(updatedConfig); err != nil {
 		slog.Error("API: Failed to encode updated task to JSON", "error", err, "taskName", taskName)
@@ -220,30 +224,25 @@ func updateTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName
 
 // deleteTask removes a task configuration.
 func deleteTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName string) {
-	tasks, err := LoadYAMLConfig(cfgPath)
+	err := ModifyYAMLConfig(cfgPath, func(tasks map[string]TaskConfig) (map[string]TaskConfig, error) {
+		if _, exists := tasks[taskName]; !exists {
+			return nil, fmt.Errorf("task '%s' not found", taskName)
+		}
+		delete(tasks, taskName)
+		return tasks, nil
+	})
 	if err != nil {
-		slog.Error("API: Failed to load config data before deleting task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to load configuration", http.StatusInternalServerError)
-		return
-	}
-
-	if _, exists := tasks[taskName]; !exists {
-		http.Error(w, fmt.Sprintf("Task '%s' not found", taskName), http.StatusNotFound)
-		return
-	}
-
-	// Delete the task
-	delete(tasks, taskName)
-
-	// Save the updated config
-	if err := SaveYAMLConfig(cfgPath, tasks); err != nil {
-		slog.Error("API: Failed to save config data after deleting task", "error", err, "path", cfgPath)
-		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			slog.Error("API: Failed to delete task", "error", err, "path", cfgPath)
+			http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
+		}
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "Task '%s' deleted successfully", taskName) // Simple text response for delete
+	fmt.Fprintf(w, "Task '%s' deleted successfully", taskName)
 }
 
 // --- Web Server Setup ---
@@ -352,12 +351,11 @@ func StartWebServer(addr string, webUiDir string, cfgPath string, token string) 
 
 	// Create the server instance
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-		// Add timeouts for production hardening
-		// ReadTimeout:  5 * time.Second,
-		// WriteTimeout: 10 * time.Second,
-		// IdleTimeout:  120 * time.Second,
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// Start the server in a separate goroutine so it doesn't block

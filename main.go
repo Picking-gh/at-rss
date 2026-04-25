@@ -131,7 +131,7 @@ func main() {
 			return // Exit main function
 		case event, ok := <-watcher.Events:
 			if !ok {
-				slog.Error("Configure file watching error", "error", err)
+				slog.Error("Configure file watcher channel closed unexpectedly")
 				return
 			}
 			if event.Has(fsnotify.Write) {

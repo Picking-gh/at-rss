@@ -61,24 +61,31 @@ func NewAria2c(ctx context.Context, rpcUrl string, token string) (*Aria2c, error
 	}
 
 	client := &http.Client{
-		Timeout: 30 * time.Second, // Keep the original timeout
+		Timeout: 30 * time.Second,
 	}
 	a := &Aria2c{
 		rpcURL:     rpcUrl,
-		rpcToken:   "token:" + token, // Aria2 expects "token:" prefix
 		httpClient: client,
 		ctx:        ctx,
+	}
+	if token != "" {
+		a.rpcToken = "token:" + token
 	}
 
 	return a, nil
 }
 
 func (a *Aria2c) call(method string, params []any) (*aria2Response, error) {
-	actualParams := append([]any{a.rpcToken}, params...)
+	var actualParams []any
+	if a.rpcToken != "" {
+		actualParams = append([]any{a.rpcToken}, params...)
+	} else {
+		actualParams = params
+	}
 
 	reqPayload := aria2Request{
 		Jsonrpc: "2.0",
-		ID:      fmt.Sprintf("at-rss-%d", rand.Int()), // Simple unique ID
+		ID:      fmt.Sprintf("at-rss-%d", rand.Int()),
 		Method:  method,
 		Params:  actualParams,
 	}

@@ -12,7 +12,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"html"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -23,6 +25,22 @@ import (
 	"github.com/liuzl/gocc"
 	"github.com/mmcdole/gofeed"
 )
+
+const maxTorrentFileSize = 10 << 20 // 10 MB limit for downloaded .torrent files
+
+// torrentHTTPClient is an isolated HTTP client for downloading .torrent files
+// with redirects disabled and private-IP blocking to prevent SSRF.
+var torrentHTTPClient = &http.Client{
+	Timeout: 15 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse // do not follow redirects
+	},
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 10 * time.Second,
+		}).DialContext,
+	},
+}
 
 const btihPrefix = "urn:btih:"
 
@@ -271,9 +289,9 @@ func parseMagnetURI(uri string) ([]string, error) {
 	return hashes, nil
 }
 
-// parseTorrentURI downloads and parses torrent file to get infohash
+// parseTorrentURI downloads and parses torrent file to get infohash.
 func parseTorrentURI(ctx context.Context, uri string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
@@ -281,13 +299,17 @@ func parseTorrentURI(ctx context.Context, uri string) ([]string, error) {
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := torrentHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	metaInfo, err := metainfo.Load(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("torrent download failed with status: " + resp.Status)
+	}
+
+	metaInfo, err := metainfo.Load(io.LimitReader(resp.Body, maxTorrentFileSize))
 	if err != nil {
 		return nil, err
 	}

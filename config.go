@@ -7,6 +7,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,12 +28,28 @@ type DownloaderConfig struct {
 	RpcPath  string `yaml:"rpcPath,omitempty" json:"rpcPath,omitempty"`   // RPC path (e.g., "/jsonrpc", "/transmission/rpc")
 	UseHttps bool   `yaml:"useHttps,omitempty" json:"useHttps,omitempty"` // Use HTTPS instead of HTTP
 
-	// Authentication
-	Token    string `yaml:"token,omitempty" json:"token,omitempty"`       // For aria2c
-	Username string `yaml:"username,omitempty" json:"username,omitempty"` // For transmission
-	Password string `yaml:"password,omitempty" json:"password,omitempty"` // For transmission
+	// Authentication (credentials are masked in JSON responses via custom MarshalJSON)
+	Token    string `yaml:"token,omitempty" json:"token,omitempty"`
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
 
 	AutoCleanUp bool `yaml:"autoCleanUp,omitempty" json:"autoCleanUp,omitempty"` // Option to automatically clean up completed tasks
+}
+
+// MarshalJSON implements json.Marshaler to mask sensitive credentials.
+func (d DownloaderConfig) MarshalJSON() ([]byte, error) {
+	type Alias DownloaderConfig
+	safe := Alias(d)
+	if safe.Token != "" {
+		safe.Token = "******"
+	}
+	if safe.Username != "" {
+		safe.Username = "******"
+	}
+	if safe.Password != "" {
+		safe.Password = "******"
+	}
+	return json.Marshal(safe)
 }
 
 // TaskConfig represents a single task configuration.
@@ -143,10 +160,10 @@ func LoadConfig(filename string, fetchInterval int) ([]*Task, error) {
 	return tasks, nil
 }
 
-// loadYAMLConfig reads and unmarshals the YAML configuration file
+// LoadYAMLConfig reads and unmarshals the YAML configuration file.
 func LoadYAMLConfig(cfgPath string) (map[string]TaskConfig, error) {
-	configLock.Lock()
-	defer configLock.Unlock()
+	configLock.RLock()
+	defer configLock.RUnlock()
 
 	source, err := os.ReadFile(cfgPath)
 	if err != nil {
@@ -161,23 +178,37 @@ func LoadYAMLConfig(cfgPath string) (map[string]TaskConfig, error) {
 	return taskConfigs, nil
 }
 
-// SaveYAMLConfig saves the task configurations back to the YAML file.
-func SaveYAMLConfig(cfgPath string, taskConfigs map[string]TaskConfig) error {
+// ModifyYAMLConfig atomically reads, modifies, and writes the YAML config file
+// while holding a write lock to prevent races with the file watcher and other API calls.
+func ModifyYAMLConfig(cfgPath string, fn func(map[string]TaskConfig) (map[string]TaskConfig, error)) error {
 	configLock.Lock()
 	defer configLock.Unlock()
 
-	data, err := yaml.Marshal(taskConfigs)
+	source, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var tasks map[string]TaskConfig
+	if err := yaml.Unmarshal(source, &tasks); err != nil {
+		return fmt.Errorf("failed to parse YAML config: %w", err)
+	}
+
+	tasks, err = fn(tasks)
+	if err != nil {
+		return err
+	}
+
+	data, err := yaml.Marshal(tasks)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config to YAML: %w", err)
 	}
 
-	// Use 0600 for potentially sensitive config data
-	err = os.WriteFile(cfgPath, data, 0600)
-	if err != nil {
+	if err := os.WriteFile(cfgPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write to config file %s: %w", cfgPath, err)
 	}
 
-	slog.Info("Configuration saved successfully via API", "path", cfgPath)
+	slog.Info("Configuration saved successfully", "path", cfgPath)
 	return nil
 }
 

@@ -181,7 +181,7 @@ func (c *Cache) Flush() error {
 	return saveCache(c.filePath, c.data)
 }
 
-// saveCache creates necessary directories and serializes the given object to a file using yaml encoding
+// saveCache creates necessary directories and serializes the given object to a file using JSON encoding
 // with atomic write operation to prevent data corruption.
 func saveCache(filePath string, object any) error {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0744); err != nil {
@@ -211,7 +211,7 @@ func saveCache(filePath string, object any) error {
 	return nil
 }
 
-// loadCache opens a file and deserializes its contents into the provided object using yaml encoding.
+// loadCache opens a file and deserializes its contents into the provided object using JSON encoding.
 // Returns nil if file doesn't exist, error for other failures.
 func loadCache(filePath string, object any) error {
 	file, err := os.Open(filePath)

@@ -53,3 +53,4 @@ dist-ssr
 at-rss
 at-rss.conf
 build/
+.claude/

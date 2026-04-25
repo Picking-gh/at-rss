@@ -95,10 +95,11 @@
       dataToSave.port = isNaN(parsedPort) ? null : parsedPort; // Assign null if parsing fails
     }
 
-    // Handle optional strings: Convert empty strings to undefined
-    dataToSave.token = dataToSave.token || undefined;
-    dataToSave.username = dataToSave.username?.trim() || undefined;
-    dataToSave.password = dataToSave.password || undefined;
+    // Handle optional strings: "******" is the server-side mask for existing credentials.
+    // Convert to undefined so the API preserves the old value.
+    dataToSave.token = (dataToSave.token && dataToSave.token !== "******") ? dataToSave.token : undefined;
+    dataToSave.username = (dataToSave.username && dataToSave.username !== "******") ? dataToSave.username : undefined;
+    dataToSave.password = (dataToSave.password && dataToSave.password !== "******") ? dataToSave.password : undefined;
     dataToSave.rpcPath = dataToSave.rpcPath?.trim() || undefined;
     dataToSave.useHttps = dataToSave.useHttps || false;
     dataToSave.autoCleanUp = dataToSave.autoCleanUp || false;
