@@ -185,19 +185,24 @@ func updateTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName
 			return nil, fmt.Errorf("task '%s' not found", taskName)
 		}
 
-		// Preserve sensitive credentials from existing config when incoming values are empty
+		// Preserve sensitive credentials from existing config when incoming values are empty.
+		// Match by (type, host, port) instead of array index to survive reordering.
 		for i := range updatedConfig.Downloaders {
 			dl := &updatedConfig.Downloaders[i]
-			if i < len(existingConfig.Downloaders) {
-				existing := existingConfig.Downloaders[i]
-				if dl.Token == "" {
-					dl.Token = existing.Token
-				}
-				if dl.Username == "" {
-					dl.Username = existing.Username
-				}
-				if dl.Password == "" {
-					dl.Password = existing.Password
+			for _, existing := range existingConfig.Downloaders {
+				if dl.Type == existing.Type &&
+					dl.Host == existing.Host &&
+					dl.Port == existing.Port {
+					if dl.Token == "" {
+						dl.Token = existing.Token
+					}
+					if dl.Username == "" {
+						dl.Username = existing.Username
+					}
+					if dl.Password == "" {
+						dl.Password = existing.Password
+					}
+					break
 				}
 			}
 		}

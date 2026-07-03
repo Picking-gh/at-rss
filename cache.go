@@ -93,9 +93,9 @@ func (c *Cache) Set(key string, value map[string][]string, overwrite bool) {
 		existingV, itemExists := feedCache.Items[k]
 		shouldSet := overwrite || !itemExists || len(existingV) == 0
 		if shouldSet {
-			// Only clone if necessary and different
+			// !itemExists short-circuits — new entries always marked changed
 			if !itemExists || !slices.Equal(existingV, v) {
-				feedCache.Items[k] = slices.Clone(v) // Store a copy
+				feedCache.Items[k] = slices.Clone(v)
 				itemsChanged = true
 			}
 		}

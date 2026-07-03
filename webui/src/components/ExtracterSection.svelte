@@ -58,7 +58,7 @@
         type="text"
         id="extracter-pattern"
         bind:value={internalExtracter.pattern}
-        placeholder="e.g., (?:[2-7A-Z]&#123;32&#125;|[0-9a-f]&#123;40&#125;)"
+        placeholder="e.g., (?:[2-7A-Z]{32}|[0-9a-f]{40})"
         oninput={handleInputChange}
       />
     </div>

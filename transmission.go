@@ -107,70 +107,76 @@ func NewTransmission(ctx context.Context, rpcUrl string, user string, pswd strin
 }
 
 func (t *Transmission) call(method string, args any) (*transmissionResponse, error) {
-	t.mu.Lock()
-	currentSessionID := t.sessionID
-	t.mu.Unlock()
-
-	tag := rand.Int()
-	reqPayload := transmissionRequest{
-		Method:    method,
-		Arguments: args,
-		Tag:       tag,
-	}
-
-	reqBody, err := json.Marshal(reqPayload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal transmission request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(t.ctx, "POST", t.rpcURL, bytes.NewBuffer(reqBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create transmission request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if currentSessionID != "" {
-		req.Header.Set(transmissionSessionIDHeader, currentSessionID)
-	}
-	if t.user != "" || t.password != "" {
-		req.SetBasicAuth(t.user, t.password)
-	}
-
-	resp, err := t.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute transmission request (%s): %w", method, err)
-	}
-	defer resp.Body.Close()
-
-	// Handle 409 Conflict for session ID
-	if resp.StatusCode == http.StatusConflict {
-		newSessionID := resp.Header.Get(transmissionSessionIDHeader)
-		if newSessionID == "" {
-			return nil, fmt.Errorf("transmission request (%s) failed with 409 Conflict but no new session ID provided", method)
-		}
+	// At most 2 attempts: first with cached session-id, second with refreshed one.
+	// Prevents infinite recursion if Transmission keeps returning 409.
+	for attempt := 0; attempt < 2; attempt++ {
 		t.mu.Lock()
-		t.sessionID = newSessionID
+		currentSessionID := t.sessionID
 		t.mu.Unlock()
-		return t.call(method, args)
+
+		tag := rand.Int()
+		reqPayload := transmissionRequest{
+			Method:    method,
+			Arguments: args,
+			Tag:       tag,
+		}
+
+		reqBody, err := json.Marshal(reqPayload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal transmission request: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(t.ctx, "POST", t.rpcURL, bytes.NewBuffer(reqBody))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create transmission request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if currentSessionID != "" {
+			req.Header.Set(transmissionSessionIDHeader, currentSessionID)
+		}
+		if t.user != "" || t.password != "" {
+			req.SetBasicAuth(t.user, t.password)
+		}
+
+		resp, err := t.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute transmission request (%s): %w", method, err)
+		}
+		defer resp.Body.Close()
+
+		// Handle 409 Conflict for session ID (attempt 0 only)
+		if resp.StatusCode == http.StatusConflict && attempt == 0 {
+			newSessionID := resp.Header.Get(transmissionSessionIDHeader)
+			if newSessionID == "" {
+				return nil, fmt.Errorf("transmission request (%s) failed with 409 Conflict but no new session ID provided", method)
+			}
+			t.mu.Lock()
+			t.sessionID = newSessionID
+			t.mu.Unlock()
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("transmission request (%s) failed with status: %s", method, resp.Status)
+		}
+
+		var respPayload transmissionResponse
+		if err := json.NewDecoder(resp.Body).Decode(&respPayload); err != nil {
+			return nil, fmt.Errorf("failed to decode transmission response (%s): %w", method, err)
+		}
+
+		if respPayload.Tag != tag {
+			return nil, fmt.Errorf("transmission response tag mismatch (expected %d, got %d)", tag, respPayload.Tag)
+		}
+
+		if respPayload.Result != "success" {
+			return nil, fmt.Errorf("transmission rpc error (%s): %s", method, respPayload.Result)
+		}
+
+		return &respPayload, nil
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("transmission request (%s) failed with status: %s", method, resp.Status)
-	}
-
-	var respPayload transmissionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&respPayload); err != nil {
-		return nil, fmt.Errorf("failed to decode transmission response (%s): %w", method, err)
-	}
-
-	if respPayload.Tag != tag {
-		return nil, fmt.Errorf("transmission response tag mismatch (expected %d, got %d)", tag, respPayload.Tag)
-	}
-
-	if respPayload.Result != "success" {
-		return nil, fmt.Errorf("transmission rpc error (%s): %s", method, respPayload.Result)
-	}
-
-	return &respPayload, nil
+	return nil, fmt.Errorf("transmission request (%s): too many 409 retries", method)
 }
 
 // AddTorrent adds a new magnet link to the transmission server

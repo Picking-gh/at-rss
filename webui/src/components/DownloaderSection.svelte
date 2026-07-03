@@ -182,7 +182,7 @@
       </div>
       <div class="form-group">
         <label for="downloader-host">Host (Optional)</label>
-        <input type="text" id="downloader-host" bind:value={currentDownloaderData.host} placeholder="e.g., localhost or 192.168.1.10" required />
+        <input type="text" id="downloader-host" bind:value={currentDownloaderData.host} placeholder="e.g., localhost or 192.168.1.10" />
       </div>
       <div class="form-group">
         <label for="downloader-port">Port (Optional)</label>

@@ -33,21 +33,14 @@
 
   // --- Event Handlers ---
   function notifyUpdate() {
-    // Check if both include and exclude arrays are empty
-    const includeEmpty = !internalFilter.include || internalFilter.include.length === 0;
-    const excludeEmpty = !internalFilter.exclude || internalFilter.exclude.length === 0;
-    
-    if (includeEmpty && excludeEmpty) {
-      // Both arrays are empty, set filter to null
-      update(null);
-    } else {
-      // At least one array has content, create filter object
-      const updatedFilter: FilterConfig = {
-        include: internalFilter.include || [],
-        exclude: internalFilter.exclude || [],
-      };
-      update(updatedFilter);
-    }
+    // Always send the filter object, even if both arrays are empty.
+    // Server distinguishes: filter: null → download all,
+    // filter: {include:[], exclude:[]} → match nothing (safety).
+    const updatedFilter: FilterConfig = {
+      include: internalFilter.include || [],
+      exclude: internalFilter.exclude || [],
+    };
+    update(updatedFilter);
   }
 
   function openAddKeywordModal(type: "include" | "exclude") {
@@ -140,6 +133,14 @@
     </ul>
   {:else}
     <p class="empty-list-message">No {type} keywords.</p>
+  {/if}
+
+  {#if type === "include" && (!internalFilter.include || internalFilter.include.length === 0) && (!internalFilter.exclude || internalFilter.exclude.length === 0)}
+    <div class="filter-warning">
+      ⚠️ Both Include and Exclude are empty. <strong>Nothing will be downloaded.</strong>
+      <br/>To download everything, remove the filter entirely by not adding any keywords
+      and not saving this filter section.
+    </div>
   {/if}
   <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal(type)}>
     Add {type === "include" ? "Include" : "Exclude"} Keyword
