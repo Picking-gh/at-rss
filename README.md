@@ -82,6 +82,10 @@ my_anime:
 - `exclude`: list of keyword groups. Items are skipped if **any** group matches (exclude wins).
 - Keywords within a group are comma-separated and have **AND** semantics.
 - Matching is case-insensitive and traditional→simplified normalized.
+- Omitting the `filter` section entirely means download everything.
+- An empty `include` list means download everything (explicit intent).
+- `include: [""]` (single empty string) means download nothing — used as a
+  placeholder by the Web UI when downloads are paused.
 
 ### Extractor reference
 

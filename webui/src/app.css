@@ -452,6 +452,12 @@ h4 {
   line-height: 1.5;
 }
 
+.confirm-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
 /* --- Buttons --- */
 .button {
   padding: var(--spacing-sm) var(--spacing-lg);

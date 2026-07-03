@@ -80,12 +80,33 @@
     handleInputChange();
   }
 
+  function cleanDownloaderForSave(dl: DownloaderConfig): DownloaderConfig {
+    // Remove credential fields that don't apply to this downloader type
+    const cleaned = {
+      ...dl,
+      token: (dl.token === "******") ? undefined : dl.token,
+      username: (dl.username === "******") ? undefined : dl.username,
+      password: (dl.password === "******") ? undefined : dl.password,
+    };
+    if (dl.type === "aria2c") {
+      delete cleaned.username;
+      delete cleaned.password;
+    } else if (dl.type === "transmission") {
+      delete cleaned.token;
+    }
+    return cleaned;
+  }
+
   async function handleSave(event: Event) {
     event.preventDefault();
     try {
       const method = isNew ? "POST" : "PUT";
       const url = isNew ? "/api/tasks" : `/api/tasks/${taskName}`;
-      const bodyPayload = isNew ? { config: internalTaskConfig, name: taskName } : internalTaskConfig;
+      const configToSave = {
+        ...internalTaskConfig,
+        downloaders: (internalTaskConfig.downloaders || []).map(cleanDownloaderForSave),
+      };
+      const bodyPayload = isNew ? { config: configToSave, name: taskName } : configToSave;
       const body = JSON.stringify(bodyPayload);
       await apiFetch(url, { method, headers: { "Content-Type": "application/json" }, body });
       onTaskSaved?.(taskName);

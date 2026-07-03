@@ -34,11 +34,16 @@
 # - 'include' filter:
 #   * Multiple strings represent OR relationship
 #   * Comma-separated values within a string represent AND relationship
-#   * Empty 'include' allows all items
+#   * Empty 'include' means download all items (no include filter)
+#   * [""] (single empty string) means download nothing — used as a
+#     placeholder by the Web UI when the user chooses to pause downloads
 # - 'exclude' filter:
 #   * Multiple strings represent OR relationship
 #   * Comma-separated values within a string represent AND relationship
 #   * Exclusions take priority over inclusions
+# - Omitting the 'filter' section entirely means no filtering (download all)
+# - If a filter section exists but include is empty, all items are downloaded
+#   (the Web UI asks for confirmation before reaching this state)
 # - Recommendation: Enclose each line of keywords in double quotes
 
 # Extractor configuration (optional):

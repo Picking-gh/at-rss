@@ -95,11 +95,19 @@
       dataToSave.port = isNaN(parsedPort) ? null : parsedPort; // Assign null if parsing fails
     }
 
-    // Handle optional strings: "******" is the server-side mask for existing credentials.
-    // Convert to undefined so the API preserves the old value.
-    dataToSave.token = (dataToSave.token && dataToSave.token !== "******") ? dataToSave.token : undefined;
-    dataToSave.username = (dataToSave.username && dataToSave.username !== "******") ? dataToSave.username : undefined;
-    dataToSave.password = (dataToSave.password && dataToSave.password !== "******") ? dataToSave.password : undefined;
+    // "******" = mask → undefined (preserve). Empty string = clear.
+    const cleanCredential = (v: string | undefined) =>
+      (v === "******") ? undefined : (v !== undefined ? (v || "") : undefined);
+    dataToSave.token = cleanCredential(dataToSave.token);
+    dataToSave.username = cleanCredential(dataToSave.username);
+    dataToSave.password = cleanCredential(dataToSave.password);
+    // Remove credential fields that don't apply to this downloader type
+    if (dataToSave.type === "aria2c") {
+      delete dataToSave.username;
+      delete dataToSave.password;
+    } else if (dataToSave.type === "transmission") {
+      delete dataToSave.token;
+    }
     dataToSave.rpcPath = dataToSave.rpcPath?.trim() || undefined;
     dataToSave.useHttps = dataToSave.useHttps || false;
     dataToSave.autoCleanUp = dataToSave.autoCleanUp || false;

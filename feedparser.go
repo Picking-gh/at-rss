@@ -187,14 +187,14 @@ func (f *Feed) matchesExcludeFilters(title string) bool {
 
 // matchesIncludeFilters checks if title matches include filters.
 // nil Include = no filter configured (download all).
-// empty Include + empty Exclude = safety: match nothing (prevents accidental mass-download).
-// empty Include + non-empty Exclude = exclude-only mode (download all except excluded).
+// empty Include = download all (intentional, confirmed by user).
+// [""] = placeholder set by frontend meaning "download nothing".
 func (f *Feed) matchesIncludeFilters(title string) bool {
-	if f.Include == nil {
-		return true // no filter configured → download all
+	if f.Include == nil || len(f.Include) == 0 {
+		return true // no filter or empty → download all
 	}
-	if len(f.Include) == 0 {
-		return len(f.Exclude) > 0 // exclude-only → match; both empty → safety skip
+	if len(f.Include) == 1 && f.Include[0] == "" {
+		return false // explicit "download nothing" placeholder
 	}
 	for _, keywords := range f.Include {
 		if allKeywordsMatch(title, keywords) {

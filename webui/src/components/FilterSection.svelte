@@ -4,18 +4,15 @@
   import type { FilterConfig } from "../types";
 
   interface Props {
-    filter?: FilterConfig | null | undefined; // The filter configuration object
-    type?: "include" | "exclude"; // Which type of filter to show
+    filter?: FilterConfig | null | undefined;
+    type?: "include" | "exclude";
     update?: any;
   }
 
   let { filter = null, type = "include", update }: Props = $props();
 
-  // --- Local State ---
-  // Initialize with empty filter, update when prop changes
   let internalFilter: FilterConfig = $state({ include: [], exclude: [] });
 
-  // Update internal state when prop changes
   $effect(() => {
     if (filter) {
       internalFilter = filter;
@@ -24,18 +21,18 @@
     }
   });
 
-  // --- Modal State ---
   let showKeywordModal = $state(false);
   let modalTitle = $state("");
   let currentKeywordValue = $state("");
   let editingKeywordType: "include" | "exclude" | null = null;
   let editingKeywordIndex: number | null = null;
 
-  // --- Event Handlers ---
+  // Empty string placeholder = intentional "download nothing".
+  // An empty string cannot be typed in the Web UI (input validation rejects it)
+  // and can never match a real title in the backend.
+  const NONE_PLACEHOLDER = "";
+
   function notifyUpdate() {
-    // Always send the filter object, even if both arrays are empty.
-    // Server distinguishes: filter: null → download all,
-    // filter: {include:[], exclude:[]} → match nothing (safety).
     const updatedFilter: FilterConfig = {
       include: internalFilter.include || [],
       exclude: internalFilter.exclude || [],
@@ -43,21 +40,35 @@
     update(updatedFilter);
   }
 
-  function openAddKeywordModal(type: "include" | "exclude") {
-    modalTitle = `Add ${type.charAt(0).toUpperCase() + type.slice(1)} Keyword`;
+  function hasNonePlaceholder(): boolean {
+    const list = internalFilter[type];
+    return !!list && list.length === 1 && list[0] === NONE_PLACEHOLDER;
+  }
+
+  function visibleKeywords(): string[] {
+    const list = internalFilter[type] || [];
+    return list.filter(k => k !== NONE_PLACEHOLDER);
+  }
+
+  function clearNonePlaceholder() {
+    internalFilter[type] = [];
+    notifyUpdate();
+  }
+
+  function openAddKeywordModal(t: "include" | "exclude") {
+    modalTitle = `Add ${t.charAt(0).toUpperCase() + t.slice(1)} Keyword`;
     currentKeywordValue = "";
-    editingKeywordType = type;
+    editingKeywordType = t;
     editingKeywordIndex = null;
     showKeywordModal = true;
   }
 
-  function openEditKeywordModal(type: "include" | "exclude", index: number) {
-    const currentKeyword = internalFilter[type]?.[index];
-    if (currentKeyword === undefined) return;
-
-    modalTitle = `Edit ${type.charAt(0).toUpperCase() + type.slice(1)} Keyword`;
-    currentKeywordValue = currentKeyword;
-    editingKeywordType = type;
+  function openEditKeywordModal(t: "include" | "exclude", index: number) {
+    const kw = visibleKeywords()[index];
+    if (kw === undefined) return;
+    modalTitle = `Edit ${t.charAt(0).toUpperCase() + t.slice(1)} Keyword`;
+    currentKeywordValue = kw;
+    editingKeywordType = t;
     editingKeywordIndex = index;
     showKeywordModal = true;
   }
@@ -68,50 +79,72 @@
       alert("Keyword cannot be empty.");
       return;
     }
-
+    // Remove placeholder when adding real keyword
+    if (hasNonePlaceholder()) {
+      internalFilter[editingKeywordType] = [];
+    }
     const list = internalFilter[editingKeywordType] || [];
 
     if (editingKeywordIndex !== null) {
-      // Editing existing keyword
       const originalKeyword = list[editingKeywordIndex];
       if (keywordValue === originalKeyword) {
-        showKeywordModal = false; // No change
+        showKeywordModal = false;
         return;
       }
-      // Check if edited keyword already exists elsewhere in the list
       if (list.some((kw, i) => i !== editingKeywordIndex && kw === keywordValue)) {
-        alert(`Keyword "${keywordValue}" already exists in ${editingKeywordType} list.`);
+        alert(`Keyword "${keywordValue}" already exists.`);
         return;
       }
       const updatedKeywords = [...list];
       updatedKeywords[editingKeywordIndex] = keywordValue;
       internalFilter[editingKeywordType] = updatedKeywords;
     } else {
-      // Adding new keyword - check for duplicates
       if (list.includes(keywordValue)) {
-        alert(`Keyword "${keywordValue}" already exists in ${editingKeywordType} list.`);
+        alert(`Keyword "${keywordValue}" already exists.`);
         return;
       }
       internalFilter[editingKeywordType] = [...list, keywordValue];
     }
-
     notifyUpdate();
     showKeywordModal = false;
   }
 
-  function deleteKeyword(type: "include" | "exclude", index: number) {
-    if (confirm(`Are you sure you want to delete this ${type} keyword?`)) {
-      internalFilter[type] = internalFilter[type]?.filter((_, i) => i !== index);
-      notifyUpdate();
+  function deleteKeyword(t: "include" | "exclude", index: number) {
+    const kw = visibleKeywords()[index];
+    if (kw === undefined) return;
+    const list = internalFilter[t] || [];
+    const realIndex = list.indexOf(kw);
+    if (realIndex < 0) return;
+
+    if (t === "include" && visibleKeywords().length === 1) {
+      // Last include keyword being deleted — prompt for intent
+      showClearConfirm = true;
+    } else {
+      if (confirm(`Delete this ${t} keyword?`)) {
+        internalFilter[t] = list.filter((_, i) => i !== realIndex);
+        notifyUpdate();
+      }
     }
   }
 
-  function removeFilter() {
-    if (confirm("Remove the entire filter section? This will switch to 'download everything' mode.")) {
-      update(null);
-    }
+  // State for the "last keyword deleted" confirmation
+  let showClearConfirm = $state(false);
+
+  function confirmDownloadAll() {
+    internalFilter.include = [];
+    showClearConfirm = false;
+    notifyUpdate();
   }
 
+  function confirmDownloadNothing() {
+    internalFilter.include = [NONE_PLACEHOLDER];
+    showClearConfirm = false;
+    notifyUpdate();
+  }
+
+  function cancelClearConfirm() {
+    showClearConfirm = false;
+  }
 </script>
 
 <Modal bind:showModal={showKeywordModal} title={modalTitle} close={() => (showKeywordModal = false)}>
@@ -128,31 +161,40 @@
 </Modal>
 
 <div class="form-section">
-  {#if internalFilter[type] && internalFilter[type].length > 0}
+  {#if showClearConfirm}
+    <div class="filter-warning">
+      <p><strong>Include filter is now empty.</strong> What should happen?</p>
+      <div class="confirm-buttons">
+        <button type="button" class="button primary-button" onclick={confirmDownloadAll}>Download All Items</button>
+        <button type="button" class="button danger-button" onclick={confirmDownloadNothing}>Download Nothing</button>
+        <button type="button" class="button secondary-button" onclick={cancelClearConfirm}>Cancel</button>
+      </div>
+    </div>
+  {:else if hasNonePlaceholder()}
+    <div class="filter-warning">
+      ⚠️ <strong>Nothing will be downloaded.</strong>
+      <br/>Include filter is paused. To start downloading, remove this restriction.
+      <div class="confirm-buttons" style="margin-top: 0.5rem;">
+        <button type="button" class="button primary-button" onclick={clearNonePlaceholder}>Download All Items</button>
+      </div>
+    </div>
+  {:else if !internalFilter[type] || internalFilter[type].length === 0}
+    <p class="empty-list-message">
+      No {type} keywords. {type === "include" ? "All items will be downloaded." : ""}
+    </p>
+  {:else}
     <ul class="list-items keyword-list">
-      {#each internalFilter[type] as keyword, index (index)}
+      {#each visibleKeywords() as keyword, index (index)}
         <ListItem item={keyword} {index} draggable={false} edit={() => openEditKeywordModal(type, index)} del={() => deleteKeyword(type, index)}>
           {keyword}
         </ListItem>
       {/each}
     </ul>
-  {:else}
-    <p class="empty-list-message">No {type} keywords.</p>
   {/if}
 
-  {#if type === "include" && filter !== null && filter !== undefined && (!internalFilter.include || internalFilter.include.length === 0) && (!internalFilter.exclude || internalFilter.exclude.length === 0)}
-    <div class="filter-warning">
-      ⚠️ Include filter is empty. <strong>Nothing will be downloaded.</strong>
-      <br/>To download everything without filtering, remove the filter entirely
-      or add include keywords above.
-    </div>
-  {/if}
-  <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal(type)}>
-    Add {type === "include" ? "Include" : "Exclude"} Keyword
-  </button>
-  {#if type === "include" && filter !== null && filter !== undefined}
-    <button type="button" class="button danger-button add-item-button" onclick={removeFilter}>
-      Remove Filter
+  {#if !showClearConfirm && !hasNonePlaceholder()}
+    <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal(type)}>
+      Add {type === "include" ? "Include" : "Exclude"} Keyword
     </button>
   {/if}
 </div>

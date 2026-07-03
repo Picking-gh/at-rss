@@ -193,14 +193,21 @@ func updateTask(w http.ResponseWriter, r *http.Request, cfgPath string, taskName
 				if dl.Type == existing.Type &&
 					dl.Host == existing.Host &&
 					dl.Port == existing.Port {
-					if dl.Token == "" {
+					// nil or "******" = preserve existing. Non-nil (incl. "") = use as-is.
+					if dl.Token == nil || *dl.Token == "******" {
 						dl.Token = existing.Token
 					}
-					if dl.Username == "" {
-						dl.Username = existing.Username
-					}
-					if dl.Password == "" {
-						dl.Password = existing.Password
+					if dl.Type == "transmission" {
+						if dl.Username == nil || *dl.Username == "******" {
+							dl.Username = existing.Username
+						}
+						if dl.Password == nil || *dl.Password == "******" {
+							dl.Password = existing.Password
+						}
+					} else {
+						// aria2c doesn't use username/password
+						dl.Username = nil
+						dl.Password = nil
 					}
 					break
 				}

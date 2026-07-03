@@ -28,10 +28,11 @@ type DownloaderConfig struct {
 	RpcPath  string `yaml:"rpcPath,omitempty" json:"rpcPath,omitempty"`   // RPC path (e.g., "/jsonrpc", "/transmission/rpc")
 	UseHttps bool   `yaml:"useHttps,omitempty" json:"useHttps,omitempty"` // Use HTTPS instead of HTTP
 
-	// Authentication (credentials are masked in JSON responses via custom MarshalJSON)
-	Token    string `yaml:"token,omitempty" json:"token,omitempty"`
-	Username string `yaml:"username,omitempty" json:"username,omitempty"`
-	Password string `yaml:"password,omitempty" json:"password,omitempty"`
+	// Authentication (credentials are masked in JSON responses via custom MarshalJSON).
+	// Use *string to distinguish absent (nil → preserve) from empty ("" → clear).
+	Token    *string `yaml:"token,omitempty" json:"token,omitempty"`
+	Username *string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password *string `yaml:"password,omitempty" json:"password,omitempty"`
 
 	AutoCleanUp bool `yaml:"autoCleanUp,omitempty" json:"autoCleanUp,omitempty"` // Option to automatically clean up completed tasks
 }
@@ -40,14 +41,15 @@ type DownloaderConfig struct {
 func (d DownloaderConfig) MarshalJSON() ([]byte, error) {
 	type Alias DownloaderConfig
 	safe := Alias(d)
-	if safe.Token != "" {
-		safe.Token = "******"
+	mask := "******"
+	if safe.Token != nil {
+		safe.Token = &mask
 	}
-	if safe.Username != "" {
-		safe.Username = "******"
+	if safe.Username != nil {
+		safe.Username = &mask
 	}
-	if safe.Password != "" {
-		safe.Password = "******"
+	if safe.Password != nil {
+		safe.Password = &mask
 	}
 	return json.Marshal(safe)
 }
@@ -306,10 +308,16 @@ func parseDownloaderConfig(dlYAML DownloaderConfig) (ParsedDownloaderConfig, err
 
 	// Handle authentication
 	if rpcType == "aria2c" {
-		cfg.Token = dlYAML.Token // Token can be empty
+		if dlYAML.Token != nil {
+			cfg.Token = *dlYAML.Token
+		}
 	} else { // transmission
-		cfg.Username = dlYAML.Username // Username can be empty
-		cfg.Password = dlYAML.Password // Password can be empty
+		if dlYAML.Username != nil {
+			cfg.Username = *dlYAML.Username
+		}
+		if dlYAML.Password != nil {
+			cfg.Password = *dlYAML.Password
+		}
 	}
 
 	return cfg, nil
