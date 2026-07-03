@@ -106,6 +106,11 @@
     }
   }
 
+  function removeFilter() {
+    if (confirm("Remove the entire filter section? This will switch to 'download everything' mode.")) {
+      update(null);
+    }
+  }
 
 </script>
 
@@ -135,14 +140,19 @@
     <p class="empty-list-message">No {type} keywords.</p>
   {/if}
 
-  {#if type === "include" && (!internalFilter.include || internalFilter.include.length === 0) && (!internalFilter.exclude || internalFilter.exclude.length === 0)}
+  {#if type === "include" && filter !== null && filter !== undefined && (!internalFilter.include || internalFilter.include.length === 0) && (!internalFilter.exclude || internalFilter.exclude.length === 0)}
     <div class="filter-warning">
-      ⚠️ Both Include and Exclude are empty. <strong>Nothing will be downloaded.</strong>
-      <br/>To download everything, remove the filter entirely by not adding any keywords
-      and not saving this filter section.
+      ⚠️ Include filter is empty. <strong>Nothing will be downloaded.</strong>
+      <br/>To download everything without filtering, remove the filter entirely
+      or add include keywords above.
     </div>
   {/if}
   <button type="button" class="button secondary-button add-item-button" onclick={() => openAddKeywordModal(type)}>
     Add {type === "include" ? "Include" : "Exclude"} Keyword
   </button>
+  {#if type === "include" && filter !== null && filter !== undefined}
+    <button type="button" class="button danger-button add-item-button" onclick={removeFilter}>
+      Remove Filter
+    </button>
+  {/if}
 </div>
